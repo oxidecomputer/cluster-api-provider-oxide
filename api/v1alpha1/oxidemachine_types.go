@@ -20,8 +20,11 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
+const (
+	// MachineFinalizer allows ReconcileOxideMachine to clean up resources associated with
+	// OxideMachine before removing it from the apiserver.
+	MachineFinalizer = "podmanmachine.infrastructure.cluster.x-k8s.io"
+)
 
 // OxideMachineSpec defines the desired state of OxideMachine
 type OxideMachineSpec struct {
@@ -34,8 +37,10 @@ type OxideMachineSpec struct {
 
 // OxideMachineStatus defines the observed state of OxideMachine
 type OxideMachineStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
+	// Ready indicates that the machine is ready.
+	// +optional
+	// +kubebuilder:default=false
+	Ready bool `json:"ready"`
 }
 
 //+kubebuilder:object:root=true
