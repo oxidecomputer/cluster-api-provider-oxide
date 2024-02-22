@@ -22,7 +22,9 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	infrastructurev1alpha1 "github.com/oxidecomputer/cluster-api-provider-oxide/api/v1alpha1"
 )
@@ -59,4 +61,14 @@ func (r *OxideMachineReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&infrastructurev1alpha1.OxideMachine{}).
 		Complete(r)
+}
+
+func (r OxideMachineReconciler) reconcile(ctx context.Context, oxideMachine *infrastructurev1alpha1.OxideMachine) (reconcile.Result, error) {
+	// If the Machine doesn't have our finalizer, add it.
+	controllerutil.AddFinalizer(oxideMachine, infrastructurev1alpha1.MachineFinalizer)
+
+	// TODO: Add reconciler logic
+	oxideMachine.Status.Ready = true
+
+	return reconcile.Result{}, nil
 }

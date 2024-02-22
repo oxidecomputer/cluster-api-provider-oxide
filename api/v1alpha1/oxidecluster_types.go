@@ -18,24 +18,42 @@ package v1alpha1
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
+// Important: Run "make" to regenerate code after modifying this file
+
+const (
+	// ClusterFinalizer allows ReconcileOxideCluster to clean up resources associated with
+	// OxideCluster before removing it from the apiserver.
+	ClusterFinalizer = "oxidecluster.infrastructure.cluster.x-k8s.io"
+)
 
 // OxideClusterSpec defines the desired state of OxideCluster
 type OxideClusterSpec struct {
-	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
+	// The Oxide project where the cluster is installed.
+	Project string `json:"project"`
 
-	// Foo is an example field of OxideCluster. Edit oxidecluster_types.go to remove/update
-	Foo string `json:"foo,omitempty"`
+	// Network specifications
+	// +optional
+	NetworkSpec Network `json:"networkSpec,omitempty"`
+
+	// ControlPlaneEndpoint represents the endpoint used to communicate with the
+	// control plane.
+	// +optional
+	ControlPlaneEndpoint clusterv1.APIEndpoint `json:"controlPlaneEndpoint"`
 }
 
 // OxideClusterStatus defines the observed state of OxideCluster
 type OxideClusterStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
+	// Ready indicates that the cluster is ready.
+	// +optional
+	// +kubebuilder:default=false
+	Ready bool `json:"ready"`
+
+	// FailureDomains is a list of failure domains that CAPI will spread across machines.
+	// +optional
+	FailureDomains clusterv1.FailureDomains `json:"failureDomains,omitempty"`
 }
 
 //+kubebuilder:object:root=true
