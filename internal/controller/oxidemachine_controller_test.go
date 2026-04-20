@@ -18,68 +18,134 @@ package controller
 
 import (
 	"context"
+	"testing"
 
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
-	"k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/types"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"github.com/stretchr/testify/assert"
+	"go.uber.org/mock/gomock"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
-	infrastructurev1alpha1 "github.com/oxidecomputer/cluster-api-provider-oxide/api/v1alpha1"
+	"github.com/oxidecomputer/cluster-api-provider-oxide/internal/cloud/mock"
+	"github.com/oxidecomputer/oxide.go/oxide"
 )
 
-var _ = Describe("OxideMachine Controller", func() {
-	Context("When reconciling a resource", func() {
-		const resourceName = "test-resource"
+func TestEnsureInstanceDeleted(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		setup       func(*mock.MockOxideClient)
+		wantDeleted bool
+		wantErr     string
+	}{
+		{
+			name: "gone",
+			setup: func(m *mock.MockOxideClient) {
+				m.EXPECT().InstanceView(gomock.Any(), gomock.Any()).Return(nil, httpErr("ObjectNotFound"))
+			},
+			wantDeleted: true,
+		},
+		{
+			name: "running",
+			setup: func(m *mock.MockOxideClient) {
+				m.EXPECT().InstanceView(gomock.Any(), gomock.Any()).
+					Return(&oxide.Instance{RunState: oxide.InstanceStateRunning}, nil)
+				m.EXPECT().InstanceStop(gomock.Any(), gomock.Any()).Return(nil, nil)
+			},
+		},
+		{
+			name: "stopped",
+			setup: func(m *mock.MockOxideClient) {
+				m.EXPECT().InstanceView(gomock.Any(), gomock.Any()).
+					Return(&oxide.Instance{RunState: oxide.InstanceStateStopped}, nil)
+				m.EXPECT().InstanceDelete(gomock.Any(), gomock.Any()).Return(nil)
+			},
+		},
+		{
+			name: "stopping",
+			setup: func(m *mock.MockOxideClient) {
+				m.EXPECT().InstanceView(gomock.Any(), gomock.Any()).
+					Return(&oxide.Instance{RunState: oxide.InstanceStateStopping}, nil)
+			},
+		},
+		{
+			name: "view error",
+			setup: func(m *mock.MockOxideClient) {
+				m.EXPECT().InstanceView(gomock.Any(), gomock.Any()).Return(nil, httpErr("InternalError"))
+			},
+			wantErr: "viewing instance",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			oxideClient := mock.NewMockOxideClient(ctrl)
+			tc.setup(oxideClient)
 
-		ctx := context.Background()
-
-		typeNamespacedName := types.NamespacedName{
-			Name:      resourceName,
-			Namespace: "default", // TODO(user):Modify as needed
-		}
-		oxidemachine := &infrastructurev1alpha1.OxideMachine{}
-
-		BeforeEach(func() {
-			By("creating the custom resource for the Kind OxideMachine")
-			err := k8sClient.Get(ctx, typeNamespacedName, oxidemachine)
-			if err != nil && errors.IsNotFound(err) {
-				resource := &infrastructurev1alpha1.OxideMachine{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      resourceName,
-						Namespace: "default",
-					},
-					// TODO(user): Specify other spec details if needed.
-				}
-				Expect(k8sClient.Create(ctx, resource)).To(Succeed())
+			r := OxideMachineReconciler{}
+			gotDeleted, gotErr := r.ensureInstanceDeleted(
+				context.Background(),
+				oxideClient,
+				"project",
+				"instance",
+			)
+			assert.Equal(t, tc.wantDeleted, gotDeleted)
+			if tc.wantErr != "" {
+				assert.ErrorContains(t, gotErr, tc.wantErr)
+			} else {
+				assert.NoError(t, gotErr)
 			}
 		})
+	}
+}
 
-		AfterEach(func() {
-			// TODO(user): Cleanup logic after each test, like removing the resource instance.
-			resource := &infrastructurev1alpha1.OxideMachine{}
-			err := k8sClient.Get(ctx, typeNamespacedName, resource)
-			Expect(err).NotTo(HaveOccurred())
+func TestEnsureInstanceRunning(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		instance    *oxide.Instance
+		setup       func(*mock.MockOxideClient)
+		wantRunning bool
+		wantErr     string
+	}{
+		{
+			name:     "stopped",
+			instance: &oxide.Instance{RunState: oxide.InstanceStateStopped},
+			setup: func(m *mock.MockOxideClient) {
+				m.EXPECT().InstanceStart(gomock.Any(), gomock.Any()).Return(nil, nil)
+			},
+		},
+		{
+			name:     "starting",
+			instance: &oxide.Instance{RunState: oxide.InstanceStateStarting},
+			setup:    func(m *mock.MockOxideClient) {},
+		},
+		{
+			name:        "running",
+			instance:    &oxide.Instance{RunState: oxide.InstanceStateRunning},
+			setup:       func(m *mock.MockOxideClient) {},
+			wantRunning: true,
+		},
+		{
+			name:     "start error",
+			instance: &oxide.Instance{RunState: oxide.InstanceStateStopped},
+			setup: func(m *mock.MockOxideClient) {
+				m.EXPECT().InstanceStart(gomock.Any(), gomock.Any()).Return(nil, httpErr("InternalError"))
+			},
+			wantErr: "starting instance",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			oxideClient := mock.NewMockOxideClient(ctrl)
+			tc.setup(oxideClient)
 
-			By("Cleanup the specific resource instance OxideMachine")
-			Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
-		})
-		It("should successfully reconcile the resource", func() {
-			By("Reconciling the created resource")
-			controllerReconciler := &OxideMachineReconciler{
-				Client: k8sClient,
-				Scheme: k8sClient.Scheme(),
+			r := OxideMachineReconciler{}
+			gotRunning, gotErr := r.ensureInstanceRunning(
+				context.Background(),
+				oxideClient,
+				tc.instance,
+			)
+			assert.Equal(t, tc.wantRunning, gotRunning)
+			if tc.wantErr != "" {
+				assert.ErrorContains(t, gotErr, tc.wantErr)
+			} else {
+				assert.NoError(t, gotErr)
 			}
-
-			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
-				NamespacedName: typeNamespacedName,
-			})
-			Expect(err).NotTo(HaveOccurred())
-			// TODO(user): Add more specific assertions depending on your controller's
-			// reconciliation logic. Example: If you expect a certain status condition after
-			// reconciliation, verify it here.
 		})
-	})
-})
+	}
+}

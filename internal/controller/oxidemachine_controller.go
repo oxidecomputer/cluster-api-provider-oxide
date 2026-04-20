@@ -43,7 +43,8 @@ import (
 // OxideMachineReconciler reconciles a OxideMachine object
 type OxideMachineReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	Scheme             *runtime.Scheme
+	OxideClientFactory cloud.OxideClientFactory
 }
 
 // +kubebuilder:rbac:groups=infrastructure.cluster.x-k8s.io,resources=oxidemachines,verbs=get;list;watch;create;update;patch;delete
@@ -104,7 +105,7 @@ func (r *OxideMachineReconciler) Reconcile(
 		return ctrl.Result{}, err
 	}
 
-	oxideClient, err := cloud.NewOxideClient(ctx, r.Client, oxideCluster)
+	oxideClient, err := r.OxideClientFactory(ctx, r.Client, oxideCluster)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("constructing oxide client: %w", err)
 	}
@@ -229,30 +230,47 @@ func (r *OxideMachineReconciler) Reconcile(
 		}
 	}
 
-	// Ensure instance is running:
-	// * If stopped, start and requeue.
-	// * If running, finished.
-	// * Else log and requeue.
+	instanceRunning, err := r.ensureInstanceRunning(ctx, oxideClient, instance)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("ensuring instance running: %w", err)
+	}
+	if !instanceRunning {
+		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
+	}
+	oxideMachine.Status.Initialization.Provisioned = ptr.To(true)
+
+	return ctrl.Result{}, nil
+}
+
+// ensureInstanceRunning ensures that the given instance is running, starting it if necessary.
+//
+// * If stopped, start and requeue.
+// * If running, finished.
+// * Else log and requeue.
+func (r *OxideMachineReconciler) ensureInstanceRunning(
+	ctx context.Context,
+	oxideClient cloud.OxideClient,
+	instance *oxide.Instance,
+) (bool, error) {
+	log := logf.FromContext(ctx)
+
 	switch instance.RunState {
 	case oxide.InstanceStateStopped:
 		log.Info("starting instance", "instance", instance.Id)
 		if _, err := oxideClient.InstanceStart(ctx, oxide.InstanceStartParams{
-			Project:  oxide.NameOrId(oxideCluster.Spec.Project),
 			Instance: oxide.NameOrId(instance.Id),
 		}); err != nil {
-			return ctrl.Result{}, fmt.Errorf("starting instance: %w", err)
+			return false, fmt.Errorf("starting instance: %w", err)
 		}
 		log.Info("waiting for instance to start", "state", instance.RunState)
-		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
+		return false, nil
 	case oxide.InstanceStateRunning:
-		log.Info("instance is running; marking as provisioned", "instance", instanceName)
-		oxideMachine.Status.Initialization.Provisioned = ptr.To(true)
+		log.Info("instance is running; marking as provisioned", "instance", instance.Name)
+		return true, nil
 	default:
 		log.Info("waiting for instance", "instance", instance.Id, "state", instance.RunState)
-		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
+		return false, nil
 	}
-
-	return ctrl.Result{}, nil
 }
 
 // handleDelete idempotently deletes the Oxide instance and its boot disk, and removes the finalizer

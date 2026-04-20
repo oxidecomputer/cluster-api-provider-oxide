@@ -37,6 +37,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
 	infrastructurev1alpha1 "github.com/oxidecomputer/cluster-api-provider-oxide/api/v1alpha1"
+	"github.com/oxidecomputer/cluster-api-provider-oxide/internal/cloud"
 	"github.com/oxidecomputer/cluster-api-provider-oxide/internal/controller"
 	// +kubebuilder:scaffold:imports
 )
@@ -237,15 +238,17 @@ func main() {
 	}
 
 	if err := (&controller.OxideMachineReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		Client:             mgr.GetClient(),
+		Scheme:             mgr.GetScheme(),
+		OxideClientFactory: cloud.NewOxideClient,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "OxideMachine")
 		os.Exit(1)
 	}
 	if err := (&controller.OxideClusterReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		Client:             mgr.GetClient(),
+		Scheme:             mgr.GetScheme(),
+		OxideClientFactory: cloud.NewOxideClient,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "OxideCluster")
 		os.Exit(1)

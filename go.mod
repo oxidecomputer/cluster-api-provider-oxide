@@ -7,6 +7,8 @@ require (
 	github.com/onsi/ginkgo/v2 v2.27.2
 	github.com/onsi/gomega v1.38.2
 	github.com/oxidecomputer/oxide.go v0.9.1-0.20260413211122-049582075d72
+	github.com/stretchr/testify v1.11.1
+	go.uber.org/mock v0.6.0
 	k8s.io/api v0.35.0
 	k8s.io/apimachinery v0.35.0
 	k8s.io/client-go v0.35.0

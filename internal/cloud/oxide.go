@@ -13,6 +13,9 @@ import (
 	"github.com/oxidecomputer/oxide.go/oxide"
 )
 
+type OxideClientFactory func(context.Context, client.Client, *infrav1.OxideCluster) (OxideClient, error)
+
+//go:generate go tool -modfile=../../tools/go.mod mockgen -source=oxide.go -destination=mock/mock_client.go -package=mock
 type OxideClient interface {
 	FloatingIpCreate(context.Context, oxide.FloatingIpCreateParams) (*oxide.FloatingIp, error)
 	FloatingIpView(context.Context, oxide.FloatingIpViewParams) (*oxide.FloatingIp, error)
@@ -38,13 +41,13 @@ const (
 // OxideCluster.
 func NewOxideClient(
 	ctx context.Context,
-	c client.Client,
-	cluster *infrav1.OxideCluster,
+	k8sClient client.Client,
+	oxideCluster *infrav1.OxideCluster,
 ) (OxideClient, error) {
 	secret := &corev1.Secret{}
-	if err := c.Get(ctx, client.ObjectKey{
-		Namespace: cluster.Spec.CredentialsRef.Namespace,
-		Name:      cluster.Spec.CredentialsRef.Name,
+	if err := k8sClient.Get(ctx, client.ObjectKey{
+		Namespace: oxideCluster.Spec.CredentialsRef.Namespace,
+		Name:      oxideCluster.Spec.CredentialsRef.Name,
 	}, secret); err != nil {
 		return nil, fmt.Errorf("loading oxide credentials: %w", err)
 	}

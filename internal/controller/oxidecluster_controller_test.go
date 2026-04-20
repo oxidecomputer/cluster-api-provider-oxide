@@ -18,68 +18,136 @@ package controller
 
 import (
 	"context"
+	"net/http"
+	"testing"
 
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
-	"k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/types"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"github.com/stretchr/testify/assert"
+	"go.uber.org/mock/gomock"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
-	infrastructurev1alpha1 "github.com/oxidecomputer/cluster-api-provider-oxide/api/v1alpha1"
+	infrav1 "github.com/oxidecomputer/cluster-api-provider-oxide/api/v1alpha1"
+	"github.com/oxidecomputer/cluster-api-provider-oxide/internal/cloud/mock"
+	"github.com/oxidecomputer/oxide.go/oxide"
 )
 
-var _ = Describe("OxideCluster Controller", func() {
-	Context("When reconciling a resource", func() {
-		const resourceName = "test-resource"
+// httpErr constructs an *oxide.HTTPError with a stub HTTPResponse so that its
+// Error() method can be called without nil-dereferencing.
+func httpErr(code string) *oxide.HTTPError {
+	return &oxide.HTTPError{
+		ErrorResponse: &oxide.ErrorResponse{ErrorCode: code},
+		HTTPResponse:  &http.Response{Request: &http.Request{}},
+	}
+}
 
-		ctx := context.Background()
+func TestEnsureFloatingIPExists(t *testing.T) {
+	wantIP := &oxide.FloatingIp{
+		Id: "ip-id",
+		Ip: "1.2.3.4",
+	}
 
-		typeNamespacedName := types.NamespacedName{
-			Name:      resourceName,
-			Namespace: "default", // TODO(user):Modify as needed
-		}
-		oxidecluster := &infrastructurev1alpha1.OxideCluster{}
+	for _, tc := range []struct {
+		name    string
+		setup   func(*mock.MockOxideClient)
+		wantErr string
+	}{
+		{
+			name: "create",
+			setup: func(m *mock.MockOxideClient) {
+				m.EXPECT().FloatingIpCreate(gomock.Any(), gomock.Any()).Return(wantIP, nil)
+			},
+		},
+		{
+			name: "adopt",
+			setup: func(m *mock.MockOxideClient) {
+				m.EXPECT().FloatingIpCreate(gomock.Any(), gomock.Any()).Return(nil, httpErr("ObjectAlreadyExists"))
+				m.EXPECT().FloatingIpView(gomock.Any(), gomock.Any()).Return(wantIP, nil)
+			},
+		},
+		{
+			name: "create error",
+			setup: func(m *mock.MockOxideClient) {
+				m.EXPECT().FloatingIpCreate(gomock.Any(), gomock.Any()).Return(nil, httpErr("InternalError"))
+			},
+			wantErr: "creating floating ip",
+		},
+		{
+			name: "view error",
+			setup: func(m *mock.MockOxideClient) {
+				m.EXPECT().FloatingIpCreate(gomock.Any(), gomock.Any()).Return(nil, httpErr("ObjectAlreadyExists"))
+				m.EXPECT().FloatingIpView(gomock.Any(), gomock.Any()).Return(nil, httpErr("InternalError"))
+			},
+			wantErr: "fetching existing floating ip",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			oxideClient := mock.NewMockOxideClient(ctrl)
+			tc.setup(oxideClient)
 
-		BeforeEach(func() {
-			By("creating the custom resource for the Kind OxideCluster")
-			err := k8sClient.Get(ctx, typeNamespacedName, oxidecluster)
-			if err != nil && errors.IsNotFound(err) {
-				resource := &infrastructurev1alpha1.OxideCluster{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      resourceName,
-						Namespace: "default",
-					},
-					// TODO(user): Specify other spec details if needed.
-				}
-				Expect(k8sClient.Create(ctx, resource)).To(Succeed())
+			cluster := &infrav1.OxideCluster{
+				Spec: infrav1.OxideClusterSpec{IPPool: "default"},
+			}
+			r := OxideClusterReconciler{}
+			gotIP, gotErr := r.ensureFloatingIPExists(
+				context.Background(),
+				oxideClient,
+				cluster,
+				"project",
+				"ip-name",
+			)
+			if tc.wantErr != "" {
+				assert.ErrorContains(t, gotErr, tc.wantErr)
+				assert.Nil(t, gotIP)
+			} else {
+				assert.NoError(t, gotErr)
+				assert.Equal(t, wantIP, gotIP)
 			}
 		})
+	}
+}
 
-		AfterEach(func() {
-			// TODO(user): Cleanup logic after each test, like removing the resource instance.
-			resource := &infrastructurev1alpha1.OxideCluster{}
-			err := k8sClient.Get(ctx, typeNamespacedName, resource)
-			Expect(err).NotTo(HaveOccurred())
+func TestEnsureFloatingIPDeleted(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		setup   func(*mock.MockOxideClient)
+		wantErr string
+	}{
+		{
+			name: "delete",
+			setup: func(m *mock.MockOxideClient) {
+				m.EXPECT().FloatingIpDelete(gomock.Any(), gomock.Any()).Return(nil)
+			},
+		},
+		{
+			name: "gone",
+			setup: func(m *mock.MockOxideClient) {
+				m.EXPECT().FloatingIpDelete(gomock.Any(), gomock.Any()).Return(httpErr("ObjectNotFound"))
+			},
+		},
+		{
+			name: "delete error",
+			setup: func(m *mock.MockOxideClient) {
+				m.EXPECT().FloatingIpDelete(gomock.Any(), gomock.Any()).Return(httpErr("InternalError"))
+			},
+			wantErr: "InternalError",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			oxideClient := mock.NewMockOxideClient(ctrl)
+			tc.setup(oxideClient)
 
-			By("Cleanup the specific resource instance OxideCluster")
-			Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
-		})
-		It("should successfully reconcile the resource", func() {
-			By("Reconciling the created resource")
-			controllerReconciler := &OxideClusterReconciler{
-				Client: k8sClient,
-				Scheme: k8sClient.Scheme(),
+			r := OxideClusterReconciler{}
+			gotErr := r.ensureFloatingIPDeleted(
+				context.Background(),
+				oxideClient,
+				"project",
+				"ip-name",
+			)
+			if tc.wantErr != "" {
+				assert.ErrorContains(t, gotErr, tc.wantErr)
+			} else {
+				assert.NoError(t, gotErr)
 			}
-
-			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
-				NamespacedName: typeNamespacedName,
-			})
-			Expect(err).NotTo(HaveOccurred())
-			// TODO(user): Add more specific assertions depending on your controller's
-			// reconciliation logic. Example: If you expect a certain status condition after
-			// reconciliation, verify it here.
 		})
-	})
-})
+	}
+}
