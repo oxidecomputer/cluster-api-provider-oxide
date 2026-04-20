@@ -24,7 +24,6 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/utils/ptr"
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/cluster-api/util"
 	"sigs.k8s.io/cluster-api/util/patch"
@@ -131,7 +130,7 @@ func (r *OxideClusterReconciler) Reconcile(
 	}
 	oxideCluster.Spec.ControlPlaneEndpoint.Host = ip.Ip
 	oxideCluster.Spec.ControlPlaneEndpoint.Port = 6443
-	oxideCluster.Status.Initialization.Provisioned = ptr.To(true)
+	oxideCluster.Status.Initialization.Provisioned = new(true)
 
 	// Ensure floating IP is attached to an instance. Use the 0th ready control plane machine if
 	// unattached.
@@ -249,9 +248,7 @@ func (r *OxideClusterReconciler) ensureFloatingIPExists(
 		},
 	})
 	if err != nil {
-		var httpError *oxide.HTTPError
-		if !errors.As(err, &httpError) ||
-			httpError.ErrorResponse.ErrorCode != "ObjectAlreadyExists" {
+		if !errors.Is(err, oxide.ErrObjectAlreadyExists) {
 			return nil, fmt.Errorf("creating floating ip: %w", err)
 		}
 		log.Info("floating ip already exists", "name", ipName)
@@ -278,9 +275,7 @@ func (r *OxideClusterReconciler) ensureFloatingIPDeleted(
 		Project:    oxide.NameOrId(projectName),
 		FloatingIp: oxide.NameOrId(ipName),
 	}); err != nil {
-		var httpError *oxide.HTTPError
-		if !errors.As(err, &httpError) ||
-			httpError.ErrorResponse.ErrorCode != "ObjectNotFound" {
+		if !errors.Is(err, oxide.ErrObjectNotFound) {
 			return err
 		}
 	}

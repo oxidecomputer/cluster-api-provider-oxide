@@ -26,7 +26,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/utils/ptr"
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/cluster-api/util"
 	"sigs.k8s.io/cluster-api/util/patch"
@@ -166,7 +165,7 @@ func (r *OxideMachineReconciler) Reconcile(
 				Hostname: oxide.Hostname(instanceName),
 				Ncpus:    oxide.InstanceCpuCount(oxideMachine.Spec.NCpus),
 				Memory:   oxide.ByteCount(oxideMachine.Spec.Memory.Value()),
-				Start:    ptr.To(true),
+				Start:    new(true),
 				UserData: base64.StdEncoding.EncodeToString(bootstrapSecret.Data["value"]),
 				BootDisk: oxide.InstanceDiskAttachment{
 					Value: oxide.InstanceDiskAttachmentCreate{
@@ -201,9 +200,7 @@ func (r *OxideMachineReconciler) Reconcile(
 			// instance if found. Note: if an instance was created out of band with unexpected
 			// parameters, it will be adopted as well; operators shouldn't create or modify these
 			// instances outside the reconciler.
-			var httpErr *oxide.HTTPError
-			if errors.As(err, &httpErr) &&
-				httpErr.ErrorResponse.ErrorCode == "ObjectAlreadyExists" {
+			if errors.Is(err, oxide.ErrObjectAlreadyExists) {
 				instance, err = oxideClient.InstanceView(
 					ctx,
 					oxide.InstanceViewParams{
@@ -214,8 +211,6 @@ func (r *OxideMachineReconciler) Reconcile(
 				if err != nil {
 					return ctrl.Result{}, fmt.Errorf("viewing existing oxide instance: %w", err)
 				}
-			} else {
-				return ctrl.Result{}, fmt.Errorf("creating oxide instance: %w", err)
 			}
 		}
 
@@ -237,7 +232,7 @@ func (r *OxideMachineReconciler) Reconcile(
 	if !instanceRunning {
 		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 	}
-	oxideMachine.Status.Initialization.Provisioned = ptr.To(true)
+	oxideMachine.Status.Initialization.Provisioned = new(true)
 
 	return ctrl.Result{}, nil
 }
@@ -302,8 +297,7 @@ func (r *OxideMachineReconciler) handleDelete(
 		Project: oxide.NameOrId(projectName),
 		Disk:    oxide.NameOrId(diskName),
 	}); err != nil {
-		var httpErr *oxide.HTTPError
-		if !errors.As(err, &httpErr) || httpErr.ErrorResponse.ErrorCode != "ObjectNotFound" {
+		if !errors.Is(err, oxide.ErrObjectNotFound) {
 			return ctrl.Result{}, fmt.Errorf("deleting disk: %w", err)
 		}
 	}
@@ -326,8 +320,7 @@ func (r *OxideMachineReconciler) ensureInstanceDeleted(
 		Instance: oxide.NameOrId(instanceName),
 	})
 	if err != nil {
-		var httpErr *oxide.HTTPError
-		if errors.As(err, &httpErr) && httpErr.ErrorResponse.ErrorCode == "ObjectNotFound" {
+		if errors.Is(err, oxide.ErrObjectNotFound) {
 			return true, nil
 		}
 		return false, fmt.Errorf("viewing instance: %w", err)

@@ -1,6 +1,6 @@
 module github.com/oxidecomputer/cluster-api-provider-oxide/tools
 
-go 1.25.3
+go 1.26.2
 
 tool go.uber.org/mock/mockgen
 
