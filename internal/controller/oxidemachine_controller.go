@@ -161,12 +161,16 @@ func (r *OxideMachineReconciler) Reconcile(
 		instance, err = oxideClient.InstanceCreate(ctx, oxide.InstanceCreateParams{
 			Project: oxide.NameOrId(projectName),
 			Body: &oxide.InstanceCreate{
-				Name:     oxide.Name(instanceName),
-				Hostname: oxide.Hostname(instanceName),
-				Ncpus:    oxide.InstanceCpuCount(oxideMachine.Spec.NCpus),
-				Memory:   oxide.ByteCount(oxideMachine.Spec.Memory.Value()),
-				Start:    new(true),
-				UserData: base64.StdEncoding.EncodeToString(bootstrapSecret.Data["value"]),
+				Name:               oxide.Name(instanceName),
+				Hostname:           oxide.Hostname(instanceName),
+				Ncpus:              oxide.InstanceCpuCount(oxideMachine.Spec.NCpus),
+				Memory:             oxide.ByteCount(oxideMachine.Spec.Memory.Value()),
+				Start:              new(true),
+				AntiAffinityGroups: toNamesOrIds(oxideMachine.Spec.AntiAffinityGroups),
+				SshPublicKeys:      toNamesOrIds(oxideMachine.Spec.SSHPublicKeys),
+				UserData: base64.StdEncoding.EncodeToString(
+					bootstrapSecret.Data["value"],
+				),
 				BootDisk: oxide.InstanceDiskAttachment{
 					Value: oxide.InstanceDiskAttachmentCreate{
 						Name: oxide.Name(diskName),
@@ -367,4 +371,12 @@ func (r *OxideMachineReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		For(&infrav1.OxideMachine{}).
 		Named("oxidemachine").
 		Complete(r)
+}
+
+func toNamesOrIds(values []string) []oxide.NameOrId {
+	namesOrIds := make([]oxide.NameOrId, 0, len(values))
+	for _, value := range values {
+		namesOrIds = append(namesOrIds, oxide.NameOrId(value))
+	}
+	return namesOrIds
 }
