@@ -21,3 +21,12 @@ jobs:
         run: make lint-config
       - name: Run linter
         run: make lint
+
+      - name: Check generated files for drift
+        run: |
+          make manifests generate
+          git add --intent-to-add .
+          if ! git diff --exit-code; then
+            echo 'Generated files are out of date. Run `make manifests generate` and commit the result.'
+            exit 1
+          fi
