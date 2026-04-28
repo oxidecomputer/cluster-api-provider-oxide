@@ -16,6 +16,48 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+          cache-dependency-path: |
+            go.sum
+            tools/go.sum
+
+      - name: Cache golangci-lint analysis
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/golangci-lint
+          key: golangci-lint-${{ runner.os }}-${{ hashFiles('tools/go.sum', '.golangci.yml', 'go.mod') }}
+          restore-keys: |
+            golangci-lint-${{ runner.os }}-
+
+      # Cache ./bin. We already cache go modules and builds via setup-go, but this additionally
+      # caches binaries built by the Makefile. Note that Make-managed binaries check for stale
+      # versions automatically using go-install tool, with the exception of golangci-lint.
+      - name: Cache local tool binaries
+        uses: actions/cache@v4
+        with:
+          path: bin
+          key: tools-lint-${{ runner.os }}-${{ hashFiles('Makefile', '.custom-gcl.yml', 'tools/go.sum') }}
+          restore-keys: |
+            tools-lint-${{ runner.os }}-
+
+      # Unlike other binaries built with Make, the custom golangci-lint binary doesn't check for
+      # stale binary versions. Cache it separately, using the core gcl version and plugin config
+      # hash as keys.
+      - name: Read golangci-lint version
+        id: gcl-key
+        run: echo "version=$(awk '/^GOLANGCI_LINT_VERSION \?= / {print $3}' Makefile)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache custom golangci-lint binary
+        id: gcl-cache
+        uses: actions/cache@v4
+        with:
+          path: bin/golangci-lint
+          key: golangci-lint-custom-${{ runner.os }}-${{ steps.gcl-key.outputs.version }}-${{ hashFiles('.custom-gcl.yml') }}
+
+      # If the gcl cache missed, ensure the gcl binary is deleted, since it may have been restored
+      # by the generic bin/ cache.
+      - name: Drop stale custom golangci-lint
+        if: steps.gcl-cache.outputs.cache-hit != 'true'
+        run: rm -f bin/golangci-lint
 
       - name: Check linter configuration
         run: make lint-config
