@@ -111,15 +111,13 @@ func (r *OxideMachineReconciler) Reconcile(
 
 	projectName := oxideCluster.Spec.Project
 	instanceName := fmt.Sprintf(
-		"capi-instance-%s-%s-%s",
+		"capi-%s-%s",
 		oxideMachine.Namespace,
-		oxideCluster.Name,
 		oxideMachine.Name,
 	)
 	diskName := fmt.Sprintf(
-		"capi-boot-disk-%s-%s-%s",
+		"capi-boot-%s-%s",
 		oxideMachine.Namespace,
-		oxideCluster.Name,
 		oxideMachine.Name,
 	)
 
@@ -134,9 +132,8 @@ func (r *OxideMachineReconciler) Reconcile(
 	var instance *oxide.Instance
 	if oxideMachine.Spec.ProviderID == "" {
 		nicName := fmt.Sprintf(
-			"capi-nic-%s-%s-%s",
+			"capi-%s-%s",
 			oxideMachine.Namespace,
-			oxideCluster.Name,
 			oxideMachine.Name,
 		)
 
@@ -204,17 +201,15 @@ func (r *OxideMachineReconciler) Reconcile(
 			// instance if found. Note: if an instance was created out of band with unexpected
 			// parameters, it will be adopted as well; operators shouldn't create or modify these
 			// instances outside the reconciler.
-			if errors.Is(err, oxide.ErrObjectAlreadyExists) {
-				instance, err = oxideClient.InstanceView(
-					ctx,
-					oxide.InstanceViewParams{
-						Project:  oxide.NameOrId(projectName),
-						Instance: oxide.NameOrId(instanceName),
-					},
-				)
-				if err != nil {
-					return ctrl.Result{}, fmt.Errorf("viewing existing oxide instance: %w", err)
-				}
+			if !errors.Is(err, oxide.ErrObjectAlreadyExists) {
+				return ctrl.Result{}, fmt.Errorf("creating oxide instance: %w", err)
+			}
+			instance, err = oxideClient.InstanceView(ctx, oxide.InstanceViewParams{
+				Project:  oxide.NameOrId(projectName),
+				Instance: oxide.NameOrId(instanceName),
+			})
+			if err != nil {
+				return ctrl.Result{}, fmt.Errorf("viewing existing oxide instance: %w", err)
 			}
 		}
 

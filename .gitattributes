@@ -1,0 +1,2 @@
+tests/e2e/data/cni/calico.yaml linguist-generated=true
+tests/e2e/data/ccm/oxide-ccm.yaml linguist-generated=true

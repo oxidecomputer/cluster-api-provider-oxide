@@ -1,0 +1,65 @@
+images:
+- name: ghcr.io/oxidecomputer/cluster-api-provider-oxide:dev
+  loadBehavior: mustLoad
+
+variables:
+  KUBERNETES_VERSION: "v1.34.3"
+  CONTROL_PLANE_MACHINE_COUNT: "1"
+  WORKER_MACHINE_COUNT: "0"
+  OXIDE_PROJECT: "carp"
+  OXIDE_VPC: "default"
+  OXIDE_SUBNET: "default"
+  OXIDE_IP_POOL: "eng-vpn"
+  OXIDE_IMAGE_ID: "4b2725ec-4285-4fd4-ba04-de714c55fcfc"
+  CNI: "./data/cni/calico.yaml"
+  CCM: "./data/ccm/oxide-ccm.yaml"
+  CCM_SECRET: "./data/ccm/oxide-ccm-secret.yaml"
+
+providers:
+- name: cluster-api
+  type: CoreProvider
+  versions:
+  - name: v1.11.0
+    value: https://github.com/kubernetes-sigs/cluster-api/releases/download/v1.11.0/core-components.yaml
+    type: url
+    contract: v1beta2
+    files:
+    - sourcePath: "../data/shared/capi/metadata.yaml"
+
+- name: kubeadm
+  type: BootstrapProvider
+  versions:
+  - name: v1.11.0
+    value: https://github.com/kubernetes-sigs/cluster-api/releases/download/v1.11.0/bootstrap-components.yaml
+    type: url
+    contract: v1beta2
+    files:
+    - sourcePath: "../data/shared/capi/metadata.yaml"
+
+- name: kubeadm
+  type: ControlPlaneProvider
+  versions:
+  - name: v1.11.0
+    value: https://github.com/kubernetes-sigs/cluster-api/releases/download/v1.11.0/control-plane-components.yaml
+    type: url
+    contract: v1beta2
+    files:
+    - sourcePath: "../data/shared/capi/metadata.yaml"
+
+- name: oxide
+  type: InfrastructureProvider
+  versions:
+  - name: v0.1.0
+    value: ../../../config/default
+    type: kustomize
+    contract: v1beta2
+    files:
+    - sourcePath: "../data/shared/oxide/metadata.yaml"
+    - sourcePath: "../data/infrastructure-oxide/cluster-template.yaml"
+
+intervals:
+  default/wait-controllers:    ["4m", "10s"]
+  default/wait-cluster:        ["5m", "10s"]
+  default/wait-control-plane:  ["10m", "10s"]
+  default/wait-worker-nodes:   ["5m", "10s"]
+  default/wait-delete-cluster: ["3m", "10s"]

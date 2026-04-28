@@ -1,5 +1,5 @@
 # Image URL to use all building/pushing image targets
-IMG ?= controller:latest
+IMG ?= ghcr.io/oxidecomputer/cluster-api-provider-oxide:dev
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
@@ -65,11 +65,11 @@ vet: ## Run go vet against code.
 test: manifests generate fmt vet setup-envtest ## Run tests.
 	KUBEBUILDER_ASSETS="$(shell "$(ENVTEST)" use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" go test $$(go list ./... | grep -v /e2e) -coverprofile cover.out
 
-# TODO(user): To use a different vendor for e2e tests, modify the setup under 'tests/e2e'.
 # The default setup assumes Kind is pre-installed and builds/loads the Manager Docker image locally.
 # CertManager is installed by default; skip with:
 # - CERT_MANAGER_INSTALL_SKIP=true
-KIND_CLUSTER ?= cluster-api-provider-oxide-test-e2e
+KIND_CLUSTER ?= capox-e2e
+ARTIFACTS    ?= $(PWD)/_artifacts
 
 .PHONY: setup-test-e2e
 setup-test-e2e: ## Set up a Kind cluster for e2e tests if it does not exist
@@ -86,13 +86,38 @@ setup-test-e2e: ## Set up a Kind cluster for e2e tests if it does not exist
 	esac
 
 .PHONY: test-e2e
-test-e2e: setup-test-e2e manifests generate fmt vet ## Run the e2e tests. Expected an isolated environment using Kind.
-	KIND=$(KIND) KIND_CLUSTER=$(KIND_CLUSTER) go test -tags=e2e ./test/e2e/ -v -ginkgo.v
-	$(MAKE) cleanup-test-e2e
+test-e2e: manifests generate fmt vet docker-build setup-test-e2e
+	@mkdir -p $(ARTIFACTS)
+
+	# Load the docker image, then ensure the controller deployment is running the latest image if already running.
+	$(KIND) load docker-image $(IMG) --name $(KIND_CLUSTER)
+	@if kubectl --context kind-$(KIND_CLUSTER) -n cluster-api-provider-oxide-system \
+	      get deployment cluster-api-provider-oxide-controller-manager >/dev/null 2>&1; then \
+	    kubectl --context kind-$(KIND_CLUSTER) -n cluster-api-provider-oxide-system \
+	      rollout restart deployment cluster-api-provider-oxide-controller-manager; \
+	fi
+	$(KIND) get kubeconfig --name $(KIND_CLUSTER) > $(ARTIFACTS)/kubeconfig
+	PATH="$(LOCALBIN):$$PATH" KUBECONFIG=$(ARTIFACTS)/kubeconfig \
+		go test ./tests/e2e/ -timeout 30m -v -args \
+		  -e2e.config=$(PWD)/tests/e2e/config/oxide.yaml \
+		  -e2e.artifacts-folder=$(ARTIFACTS) \
+		  -ginkgo.v
 
 .PHONY: cleanup-test-e2e
 cleanup-test-e2e: ## Tear down the Kind cluster used for e2e tests
 	@$(KIND) delete cluster --name $(KIND_CLUSTER)
+
+CCM_RELEASE ?= capox
+CCM_VERSION ?= 0.6.0
+
+.PHONY: render-e2e-ccm
+render-e2e-ccm: ## Render the Oxide CCM manifest used by e2e tests.
+	@mkdir -p tests/e2e/data/ccm
+	helm template $(CCM_RELEASE) \
+	  oci://ghcr.io/oxidecomputer/helm-charts/oxide-cloud-controller-manager \
+	  --version $(CCM_VERSION) \
+	  --namespace kube-system \
+	  > tests/e2e/data/ccm/oxide-ccm.yaml
 
 .PHONY: lint
 lint: golangci-lint ## Run golangci-lint linter

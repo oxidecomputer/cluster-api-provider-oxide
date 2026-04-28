@@ -279,7 +279,6 @@ func (r *OxideClusterReconciler) ensureFloatingIPDeleted(
 			return err
 		}
 	}
-
 	return nil
 }
 
