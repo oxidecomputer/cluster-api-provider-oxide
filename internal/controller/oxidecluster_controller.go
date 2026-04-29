@@ -22,10 +22,12 @@ import (
 	"fmt"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/cluster-api/util"
+	"sigs.k8s.io/cluster-api/util/conditions"
 	"sigs.k8s.io/cluster-api/util/patch"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -34,9 +36,10 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
+	"github.com/oxidecomputer/oxide.go/oxide"
+
 	infrav1 "github.com/oxidecomputer/cluster-api-provider-oxide/api/v1alpha1"
 	"github.com/oxidecomputer/cluster-api-provider-oxide/internal/cloud"
-	"github.com/oxidecomputer/oxide.go/oxide"
 )
 
 // OxideClusterReconciler reconciles a OxideCluster object
@@ -83,10 +86,8 @@ func (r *OxideClusterReconciler) Reconcile(
 		return ctrl.Result{}, fmt.Errorf("building patch helper: %w", err)
 	}
 	defer func() {
-		if retErr == nil {
-			if err := patchHelper.Patch(ctx, oxideCluster); err != nil {
-				retErr = fmt.Errorf("patching cluster: %w", err)
-			}
+		if err := patchHelper.Patch(ctx, oxideCluster); err != nil {
+			retErr = errors.Join(retErr, fmt.Errorf("patching cluster: %w", err))
 		}
 	}()
 
@@ -96,6 +97,7 @@ func (r *OxideClusterReconciler) Reconcile(
 	}
 	if cluster == nil {
 		log.Info("missing ownerRef on OxideCluster", "name", oxideCluster.Name)
+		return ctrl.Result{}, nil
 	}
 
 	oxideClient, err := r.OxideClientFactory(ctx, r.Client, oxideCluster)
@@ -130,7 +132,17 @@ func (r *OxideClusterReconciler) Reconcile(
 	}
 	oxideCluster.Spec.ControlPlaneEndpoint.Host = ip.Ip
 	oxideCluster.Spec.ControlPlaneEndpoint.Port = 6443
+
+	// We consider the OxideCluster to be Ready when the Oxide infrastructure that it manages (i.e.
+	// the floating IP) is provisioned. Note that upstream CAPI controllers won't provision
+	// Machine/OxideMachine resources until the OxideCluster is Ready, so we must mark Ready here
+	// rather than waiting for OxideMachines to be provisioned and attached.
 	oxideCluster.Status.Initialization.Provisioned = new(true)
+	conditions.Set(oxideCluster, metav1.Condition{
+		Type:   clusterv1.ReadyCondition,
+		Status: metav1.ConditionTrue,
+		Reason: infrav1.ReasonFloatingIPProvisioned,
+	})
 
 	// Ensure floating IP is attached to an instance. Use the 0th ready control plane machine if
 	// unattached.
@@ -138,8 +150,7 @@ func (r *OxideClusterReconciler) Reconcile(
 	var machines infrav1.OxideMachineList
 
 	// If the floating IP is attached, check whether it's attached to one of the control plane
-	// machines in the
-	// current cluster.
+	// machines in the current cluster.
 	if err := r.List(
 		ctx,
 		&machines,
@@ -181,9 +192,10 @@ func (r *OxideClusterReconciler) Reconcile(
 				"instance",
 				ip.InstanceId,
 			)
-			if _, err := oxideClient.FloatingIpDetach(ctx, oxide.FloatingIpDetachParams{
+			ip, err = oxideClient.FloatingIpDetach(ctx, oxide.FloatingIpDetachParams{
 				FloatingIp: oxide.NameOrId(ip.Id),
-			}); err != nil {
+			})
+			if err != nil {
 				return ctrl.Result{}, fmt.Errorf("detaching floating ip: %w", err)
 			}
 		}
@@ -202,18 +214,36 @@ func (r *OxideClusterReconciler) Reconcile(
 				return ctrl.Result{}, fmt.Errorf("parsing provider id: %w", err)
 			}
 			log.Info("attaching floating ip", "ip", ip.Ip, "instance", instanceID)
-			if _, err := oxideClient.FloatingIpAttach(ctx, oxide.FloatingIpAttachParams{
+			ip, err = oxideClient.FloatingIpAttach(ctx, oxide.FloatingIpAttachParams{
 				FloatingIp: oxide.NameOrId(ip.Id),
 				Body: &oxide.FloatingIpAttach{
 					Kind:   oxide.FloatingIpParentKindInstance,
 					Parent: oxide.NameOrId(instanceID),
 				},
-			}); err != nil {
+			})
+			if err != nil {
 				return ctrl.Result{}, err
 			}
 			break
 		}
+	}
 
+	if ip.InstanceId != "" {
+		// The floating IP is attached to the correct instance. Assign the cluster the
+		// FloatingIPAttached:True condition.
+		conditions.Set(oxideCluster, metav1.Condition{
+			Type:   infrav1.FloatingIPAttachedCondition,
+			Status: metav1.ConditionTrue,
+			Reason: infrav1.ReasonFloatingIPAttached,
+		})
+	} else {
+		// The floating IP is provisioned but not attached. Assign the cluster the
+		// FloatingIPAttached:False condition.
+		conditions.Set(oxideCluster, metav1.Condition{
+			Type:   infrav1.FloatingIPAttachedCondition,
+			Status: metav1.ConditionFalse,
+			Reason: infrav1.ReasonWaitingForControlPlaneMachine,
+		})
 	}
 
 	return ctrl.Result{}, nil

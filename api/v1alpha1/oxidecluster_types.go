@@ -70,6 +70,9 @@ type OxideClusterInitializationStatus struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="Ready",type="string",JSONPath=".status.conditions[?(@.type=='Ready')].status"
+// +kubebuilder:printcolumn:name="Attachment",type="string",JSONPath=".status.conditions[?(@.type=='FloatingIPAttached')].reason"
+// +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
 
 // OxideCluster is the Schema for the oxideclusters API
 type OxideCluster struct {
@@ -86,6 +89,14 @@ type OxideCluster struct {
 	// status defines the observed state of OxideCluster
 	// +optional
 	Status OxideClusterStatus `json:"status,omitzero"`
+}
+
+func (c *OxideCluster) GetConditions() []metav1.Condition {
+	return c.Status.Conditions
+}
+
+func (c *OxideCluster) SetConditions(conditions []metav1.Condition) {
+	c.Status.Conditions = conditions
 }
 
 // +kubebuilder:object:root=true

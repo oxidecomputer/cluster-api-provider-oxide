@@ -82,25 +82,10 @@ func (r *OxideMachineReconciler) Reconcile(
 		return ctrl.Result{}, fmt.Errorf("building patch helper: %w", err)
 	}
 	defer func() {
-		if retErr != nil {
-			conditions.Set(oxideMachine, metav1.Condition{
-				Type:    clusterv1.ReadyCondition,
-				Status:  metav1.ConditionUnknown,
-				Reason:  "ReconcileFailed",
-				Message: retErr.Error(),
-			})
-		}
 		if err := patchHelper.Patch(ctx, oxideMachine); err != nil {
-			retErr = fmt.Errorf("patching machine: %w", err)
+			retErr = errors.Join(retErr, fmt.Errorf("patching machine: %w", err))
 		}
 	}()
-
-	// Default to Ready:Unknown; we'll set a meaningful Ready condition later in the reconciler.
-	conditions.Set(oxideMachine, metav1.Condition{
-		Type:   clusterv1.ReadyCondition,
-		Status: metav1.ConditionUnknown,
-		Reason: "Reconciling",
-	})
 
 	machine, err := util.GetOwnerMachine(ctx, r.Client, oxideMachine.ObjectMeta)
 	if err != nil {
@@ -453,11 +438,11 @@ func toNamesOrIds(values []string) []oxide.NameOrId {
 // getReadyReason builds a Reason for the Ready condition.
 func getReadyReason(instance *oxide.Instance) string {
 	if instance == nil {
-		return "InstanceDeleted"
+		return infrav1.ReasonInstanceDeleted
 	}
 	s := string(instance.RunState)
 	if s == "" {
-		return "InstanceUnknown"
+		return infrav1.ReasonInstanceUnknown
 	}
 	return "Instance" + strings.ToUpper(s[:1]) + s[1:]
 }
