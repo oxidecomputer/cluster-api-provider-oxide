@@ -27,6 +27,62 @@ import (
 	"github.com/oxidecomputer/oxide.go/oxide"
 )
 
+func TestEnsureInstanceRunning(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		instance    *oxide.Instance
+		setup       func(*mock.MockOxideClient)
+		wantRunning bool
+		wantErr     string
+	}{
+		{
+			name:     "stopped",
+			instance: &oxide.Instance{RunState: oxide.InstanceStateStopped},
+			setup: func(m *mock.MockOxideClient) {
+				m.EXPECT().InstanceStart(gomock.Any(), gomock.Any()).Return(&oxide.Instance{}, nil)
+			},
+		},
+		{
+			name:     "starting",
+			instance: &oxide.Instance{RunState: oxide.InstanceStateStarting},
+			setup:    func(m *mock.MockOxideClient) {},
+		},
+		{
+			name:        "running",
+			instance:    &oxide.Instance{RunState: oxide.InstanceStateRunning},
+			setup:       func(m *mock.MockOxideClient) {},
+			wantRunning: true,
+		},
+		{
+			name:     "start error",
+			instance: &oxide.Instance{RunState: oxide.InstanceStateStopped},
+			setup: func(m *mock.MockOxideClient) {
+				m.EXPECT().InstanceStart(gomock.Any(), gomock.Any()).Return(nil, httpErr("InternalError"))
+			},
+			wantErr: "starting instance",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			oxideClient := mock.NewMockOxideClient(ctrl)
+			tc.setup(oxideClient)
+
+			r := OxideMachineReconciler{}
+			gotRunning, _, gotErr := r.ensureInstanceRunning(
+				context.Background(),
+				oxideClient,
+				tc.instance,
+			)
+			assert.Equal(t, tc.wantRunning, gotRunning)
+			if tc.wantErr != "" {
+				assert.ErrorContains(t, gotErr, tc.wantErr)
+			} else {
+				assert.NoError(t, gotErr)
+			}
+		})
+	}
+}
+
 func TestEnsureInstanceDeleted(t *testing.T) {
 	for _, tc := range []struct {
 		name        string
@@ -78,69 +134,13 @@ func TestEnsureInstanceDeleted(t *testing.T) {
 			tc.setup(oxideClient)
 
 			r := OxideMachineReconciler{}
-			gotDeleted, gotErr := r.ensureInstanceDeleted(
+			gotDeleted, _, gotErr := r.ensureInstanceDeleted(
 				context.Background(),
 				oxideClient,
 				"project",
 				"instance",
 			)
 			assert.Equal(t, tc.wantDeleted, gotDeleted)
-			if tc.wantErr != "" {
-				assert.ErrorContains(t, gotErr, tc.wantErr)
-			} else {
-				assert.NoError(t, gotErr)
-			}
-		})
-	}
-}
-
-func TestEnsureInstanceRunning(t *testing.T) {
-	for _, tc := range []struct {
-		name        string
-		instance    *oxide.Instance
-		setup       func(*mock.MockOxideClient)
-		wantRunning bool
-		wantErr     string
-	}{
-		{
-			name:     "stopped",
-			instance: &oxide.Instance{RunState: oxide.InstanceStateStopped},
-			setup: func(m *mock.MockOxideClient) {
-				m.EXPECT().InstanceStart(gomock.Any(), gomock.Any()).Return(nil, nil)
-			},
-		},
-		{
-			name:     "starting",
-			instance: &oxide.Instance{RunState: oxide.InstanceStateStarting},
-			setup:    func(m *mock.MockOxideClient) {},
-		},
-		{
-			name:        "running",
-			instance:    &oxide.Instance{RunState: oxide.InstanceStateRunning},
-			setup:       func(m *mock.MockOxideClient) {},
-			wantRunning: true,
-		},
-		{
-			name:     "start error",
-			instance: &oxide.Instance{RunState: oxide.InstanceStateStopped},
-			setup: func(m *mock.MockOxideClient) {
-				m.EXPECT().InstanceStart(gomock.Any(), gomock.Any()).Return(nil, httpErr("InternalError"))
-			},
-			wantErr: "starting instance",
-		},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			ctrl := gomock.NewController(t)
-			oxideClient := mock.NewMockOxideClient(ctrl)
-			tc.setup(oxideClient)
-
-			r := OxideMachineReconciler{}
-			gotRunning, gotErr := r.ensureInstanceRunning(
-				context.Background(),
-				oxideClient,
-				tc.instance,
-			)
-			assert.Equal(t, tc.wantRunning, gotRunning)
 			if tc.wantErr != "" {
 				assert.ErrorContains(t, gotErr, tc.wantErr)
 			} else {

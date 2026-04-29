@@ -21,17 +21,21 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/cluster-api/util"
+	"sigs.k8s.io/cluster-api/util/conditions"
 	"sigs.k8s.io/cluster-api/util/patch"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	infrav1 "github.com/oxidecomputer/cluster-api-provider-oxide/api/v1alpha1"
@@ -78,12 +82,25 @@ func (r *OxideMachineReconciler) Reconcile(
 		return ctrl.Result{}, fmt.Errorf("building patch helper: %w", err)
 	}
 	defer func() {
-		if retErr == nil {
-			if err := patchHelper.Patch(ctx, oxideMachine); err != nil {
-				retErr = fmt.Errorf("patching machine: %w", err)
-			}
+		if retErr != nil {
+			conditions.Set(oxideMachine, metav1.Condition{
+				Type:    clusterv1.ReadyCondition,
+				Status:  metav1.ConditionUnknown,
+				Reason:  "ReconcileFailed",
+				Message: retErr.Error(),
+			})
+		}
+		if err := patchHelper.Patch(ctx, oxideMachine); err != nil {
+			retErr = fmt.Errorf("patching machine: %w", err)
 		}
 	}()
+
+	// Default to Ready:Unknown; we'll set a meaningful Ready condition later in the reconciler.
+	conditions.Set(oxideMachine, metav1.Condition{
+		Type:   clusterv1.ReadyCondition,
+		Status: metav1.ConditionUnknown,
+		Reason: "Reconciling",
+	})
 
 	machine, err := util.GetOwnerMachine(ctx, r.Client, oxideMachine.ObjectMeta)
 	if err != nil {
@@ -137,9 +154,17 @@ func (r *OxideMachineReconciler) Reconcile(
 			oxideMachine.Name,
 		)
 
+		// Fetch the UserData from the bootstrap secret. If the secret isn't set on the spec yet,
+		// mark the OxideMachine as unready, and wait for an update to DataSecretName to trigger a
+		// new reconcile.
 		bootstrapSecretName := machine.Spec.Bootstrap.DataSecretName
 		if bootstrapSecretName == nil {
-			return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
+			conditions.Set(oxideMachine, metav1.Condition{
+				Type:   clusterv1.ReadyCondition,
+				Status: metav1.ConditionFalse,
+				Reason: clusterv1.WaitingForBootstrapDataReason,
+			})
+			return ctrl.Result{}, nil
 		}
 		var bootstrapSecret corev1.Secret
 		if err := r.Get(ctx, client.ObjectKey{
@@ -224,13 +249,23 @@ func (r *OxideMachineReconciler) Reconcile(
 		}
 	}
 
-	instanceRunning, err := r.ensureInstanceRunning(ctx, oxideClient, instance)
+	instanceRunning, instance, err := r.ensureInstanceRunning(ctx, oxideClient, instance)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("ensuring instance running: %w", err)
 	}
 	if !instanceRunning {
+		conditions.Set(oxideMachine, metav1.Condition{
+			Type:   clusterv1.ReadyCondition,
+			Status: metav1.ConditionFalse,
+			Reason: getReadyReason(instance),
+		})
 		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 	}
+	conditions.Set(oxideMachine, metav1.Condition{
+		Type:   clusterv1.ReadyCondition,
+		Status: metav1.ConditionTrue,
+		Reason: getReadyReason(instance),
+	})
 	oxideMachine.Status.Initialization.Provisioned = new(true)
 
 	return ctrl.Result{}, nil
@@ -245,25 +280,27 @@ func (r *OxideMachineReconciler) ensureInstanceRunning(
 	ctx context.Context,
 	oxideClient cloud.OxideClient,
 	instance *oxide.Instance,
-) (bool, error) {
+) (bool, *oxide.Instance, error) {
 	log := logf.FromContext(ctx)
 
 	switch instance.RunState {
 	case oxide.InstanceStateStopped:
 		log.Info("starting instance", "instance", instance.Id)
-		if _, err := oxideClient.InstanceStart(ctx, oxide.InstanceStartParams{
+		startedInstance, err := oxideClient.InstanceStart(ctx, oxide.InstanceStartParams{
 			Instance: oxide.NameOrId(instance.Id),
-		}); err != nil {
-			return false, fmt.Errorf("starting instance: %w", err)
+		})
+		if err != nil {
+			return false, instance, fmt.Errorf("starting instance: %w", err)
 		}
+		instance = startedInstance
 		log.Info("waiting for instance to start", "state", instance.RunState)
-		return false, nil
+		return false, instance, nil
 	case oxide.InstanceStateRunning:
 		log.Info("instance is running; marking as provisioned", "instance", instance.Name)
-		return true, nil
+		return true, instance, nil
 	default:
 		log.Info("waiting for instance", "instance", instance.Id, "state", instance.RunState)
-		return false, nil
+		return false, instance, nil
 	}
 }
 
@@ -279,10 +316,20 @@ func (r *OxideMachineReconciler) handleDelete(
 ) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
 
-	instanceDeleted, err := r.ensureInstanceDeleted(ctx, oxideClient, projectName, instanceName)
+	instanceDeleted, instance, err := r.ensureInstanceDeleted(
+		ctx,
+		oxideClient,
+		projectName,
+		instanceName,
+	)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("ensuring instance deleted: %w", err)
 	}
+	conditions.Set(oxideMachine, metav1.Condition{
+		Type:   clusterv1.ReadyCondition,
+		Status: metav1.ConditionFalse,
+		Reason: getReadyReason(instance),
+	})
 	if !instanceDeleted {
 		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 	}
@@ -310,7 +357,7 @@ func (r *OxideMachineReconciler) ensureInstanceDeleted(
 	oxideClient cloud.OxideClient,
 	projectName string,
 	instanceName string,
-) (bool, error) {
+) (bool, *oxide.Instance, error) {
 	log := logf.FromContext(ctx)
 
 	// View the instance. If it doesn't exist, we're done.
@@ -320,9 +367,9 @@ func (r *OxideMachineReconciler) ensureInstanceDeleted(
 	})
 	if err != nil {
 		if errors.Is(err, oxide.ErrObjectNotFound) {
-			return true, nil
+			return true, nil, nil
 		}
-		return false, fmt.Errorf("viewing instance: %w", err)
+		return false, nil, fmt.Errorf("viewing instance: %w", err)
 	}
 
 	// Instance deletion state machine:
@@ -332,22 +379,23 @@ func (r *OxideMachineReconciler) ensureInstanceDeleted(
 	switch instance.RunState {
 	case oxide.InstanceStateRunning:
 		log.Info("stopping instance", "instance", instance.Id)
-		if _, err := oxideClient.InstanceStop(ctx, oxide.InstanceStopParams{
+		instance, err = oxideClient.InstanceStop(ctx, oxide.InstanceStopParams{
 			Project:  oxide.NameOrId(projectName),
 			Instance: oxide.NameOrId(instanceName),
-		}); err != nil {
-			return false, fmt.Errorf("stopping instance: %w", err)
+		})
+		if err != nil {
+			return false, instance, fmt.Errorf("stopping instance: %w", err)
 		}
-		return false, nil
+		return false, instance, nil
 	case oxide.InstanceStateStopped:
 		log.Info("destroying instance", "instance", instance.Id)
 		if err := oxideClient.InstanceDelete(ctx, oxide.InstanceDeleteParams{
 			Project:  oxide.NameOrId(projectName),
 			Instance: oxide.NameOrId(instanceName),
 		}); err != nil {
-			return false, fmt.Errorf("deleting instance: %w", err)
+			return false, instance, fmt.Errorf("deleting instance: %w", err)
 		}
-		return false, nil
+		return false, nil, nil
 	default:
 		log.Info(
 			"waiting for instance; requeueing",
@@ -356,7 +404,7 @@ func (r *OxideMachineReconciler) ensureInstanceDeleted(
 			"state",
 			instance.RunState,
 		)
-		return false, nil
+		return false, instance, nil
 	}
 }
 
@@ -364,6 +412,12 @@ func (r *OxideMachineReconciler) ensureInstanceDeleted(
 func (r *OxideMachineReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&infrav1.OxideMachine{}).
+		// The OxideMachine reconciler depends on the state of the parent Machine; watch the parent
+		// for changes.
+		Watches(
+			&clusterv1.Machine{},
+			handler.EnqueueRequestsFromMapFunc(util.MachineToInfrastructureMapFunc(infrav1.GroupVersion.WithKind("OxideMachine"))),
+		).
 		Named("oxidemachine").
 		Complete(r)
 }
@@ -374,4 +428,16 @@ func toNamesOrIds(values []string) []oxide.NameOrId {
 		namesOrIds = append(namesOrIds, oxide.NameOrId(value))
 	}
 	return namesOrIds
+}
+
+// getReadyReason builds a Reason for the Ready condition.
+func getReadyReason(instance *oxide.Instance) string {
+	if instance == nil {
+		return "InstanceDeleted"
+	}
+	s := string(instance.RunState)
+	if s == "" {
+		return "InstanceUnknown"
+	}
+	return "Instance" + strings.ToUpper(s[:1]) + s[1:]
 }

@@ -86,8 +86,11 @@ type OxideMachineStatus struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="Cluster",type="string",JSONPath=".metadata.labels.cluster\\.x-k8s\\.io/cluster-name"
 // +kubebuilder:printcolumn:name="ProviderID",type="string",JSONPath=".spec.providerID"
-// +kubebuilder:printcolumn:name="Ready",type="boolean",JSONPath=".status.initialization.provisioned"
+// +kubebuilder:printcolumn:name="Ready",type="string",JSONPath=".status.conditions[?(@.type=='Ready')].status"
+// +kubebuilder:printcolumn:name="Reason",type="string",JSONPath=".status.conditions[?(@.type=='Ready')].reason"
+// +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
 
 // OxideMachine is the Schema for the oxidemachines API
 type OxideMachine struct {
@@ -104,6 +107,14 @@ type OxideMachine struct {
 	// status defines the observed state of OxideMachine
 	// +optional
 	Status OxideMachineStatus `json:"status,omitzero"`
+}
+
+func (m *OxideMachine) GetConditions() []metav1.Condition {
+	return m.Status.Conditions
+}
+
+func (m *OxideMachine) SetConditions(conditions []metav1.Condition) {
+	m.Status.Conditions = conditions
 }
 
 // +kubebuilder:object:root=true
