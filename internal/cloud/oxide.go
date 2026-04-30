@@ -28,6 +28,10 @@ type OxideClient interface {
 	InstanceStart(context.Context, oxide.InstanceStartParams) (*oxide.Instance, error)
 	InstanceStop(context.Context, oxide.InstanceStopParams) (*oxide.Instance, error)
 	InstanceDelete(context.Context, oxide.InstanceDeleteParams) error
+	InstanceNetworkInterfaceListAllPages(
+		context.Context,
+		oxide.InstanceNetworkInterfaceListParams,
+	) ([]oxide.InstanceNetworkInterface, error)
 
 	DiskDelete(context.Context, oxide.DiskDeleteParams) error
 }

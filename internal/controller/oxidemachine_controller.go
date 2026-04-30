@@ -268,6 +268,26 @@ func (r *OxideMachineReconciler) Reconcile(
 	})
 	oxideMachine.Status.Initialization.Provisioned = new(true)
 
+	// Look up instance addresses if not already known. As of this writing, the controller isn't
+	// responsible for managing NIC attachments after instance creation, so we don't need to refresh
+	// after populating the address list initially.
+	if len(oxideMachine.Status.Addresses) == 0 {
+		nics, err := oxideClient.InstanceNetworkInterfaceListAllPages(
+			ctx,
+			oxide.InstanceNetworkInterfaceListParams{
+				Instance: oxide.NameOrId(instance.Id),
+			},
+		)
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("listing instance NICs: %w", err)
+		}
+		addresses, err := machineAddressesFromNICs(nics)
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("getting NIC addresses: %w", err)
+		}
+		oxideMachine.Status.Addresses = addresses
+	}
+
 	return ctrl.Result{}, nil
 }
 
@@ -440,4 +460,40 @@ func getReadyReason(instance *oxide.Instance) string {
 		return "InstanceUnknown"
 	}
 	return "Instance" + strings.ToUpper(s[:1]) + s[1:]
+}
+
+func machineAddressesFromNICs(
+	nics []oxide.InstanceNetworkInterface,
+) ([]clusterv1.MachineAddress, error) {
+	var addresses []clusterv1.MachineAddress
+	for _, nic := range nics {
+		if v4, ok := nic.IpStack.AsV4(); ok {
+			addresses = append(addresses, clusterv1.MachineAddress{
+				Type: clusterv1.MachineInternalIP, Address: v4.Value.Ip,
+			})
+			continue
+		}
+		if v6, ok := nic.IpStack.AsV6(); ok {
+			addresses = append(addresses, clusterv1.MachineAddress{
+				Type: clusterv1.MachineInternalIP, Address: v6.Value.Ip,
+			})
+			continue
+		}
+		if ds, ok := nic.IpStack.AsDualStack(); ok {
+			addresses = append(
+				addresses,
+				clusterv1.MachineAddress{
+					Type:    clusterv1.MachineInternalIP,
+					Address: ds.Value.V4.Ip,
+				},
+				clusterv1.MachineAddress{
+					Type:    clusterv1.MachineInternalIP,
+					Address: ds.Value.V6.Ip,
+				},
+			)
+			continue
+		}
+		return nil, fmt.Errorf("unexpected IpStack type %T for NIC %s", nic.IpStack.Value, nic.Id)
+	}
+	return addresses, nil
 }

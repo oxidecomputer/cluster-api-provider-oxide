@@ -22,6 +22,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
+	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 
 	"github.com/oxidecomputer/cluster-api-provider-oxide/internal/cloud/mock"
 	"github.com/oxidecomputer/oxide.go/oxide"
@@ -146,6 +147,78 @@ func TestEnsureInstanceDeleted(t *testing.T) {
 			} else {
 				assert.NoError(t, gotErr)
 			}
+		})
+	}
+}
+
+func TestMachineAddressesFromNICs(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		nics          []oxide.InstanceNetworkInterface
+		wantAddresses []clusterv1.MachineAddress
+	}{
+		{
+			name: "v4",
+			nics: []oxide.InstanceNetworkInterface{
+				{
+					IpStack: oxide.PrivateIpStack{
+						Value: &oxide.PrivateIpStackV4{
+							Value: oxide.PrivateIpv4Stack{
+								Ip: "192.0.0.1",
+							},
+						},
+					},
+				},
+			},
+			wantAddresses: []clusterv1.MachineAddress{
+				{Type: clusterv1.MachineInternalIP, Address: "192.0.0.1"},
+			},
+		},
+		{
+			name: "v6",
+			nics: []oxide.InstanceNetworkInterface{
+				{
+					IpStack: oxide.PrivateIpStack{
+						Value: &oxide.PrivateIpStackV6{
+							Value: oxide.PrivateIpv6Stack{
+								Ip: "2001:db8::1",
+							},
+						},
+					},
+				},
+			},
+			wantAddresses: []clusterv1.MachineAddress{
+				{Type: clusterv1.MachineInternalIP, Address: "2001:db8::1"},
+			},
+		},
+		{
+			name: "dualstack",
+			nics: []oxide.InstanceNetworkInterface{
+				{
+					IpStack: oxide.PrivateIpStack{
+						Value: &oxide.PrivateIpStackDualStack{
+							Value: oxide.PrivateIpStackDualStackValue{
+								V4: oxide.PrivateIpv4Stack{
+									Ip: "192.0.0.2",
+								},
+								V6: oxide.PrivateIpv6Stack{
+									Ip: "2001:db8::2",
+								},
+							},
+						},
+					},
+				},
+			},
+			wantAddresses: []clusterv1.MachineAddress{
+				{Type: clusterv1.MachineInternalIP, Address: "192.0.0.2"},
+				{Type: clusterv1.MachineInternalIP, Address: "2001:db8::2"},
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			addresses, err := machineAddressesFromNICs(tc.nics)
+			assert.NoError(t, err)
+			assert.ElementsMatch(t, addresses, tc.wantAddresses)
 		})
 	}
 }
