@@ -83,7 +83,7 @@ func (r *OxideMachineReconciler) Reconcile(
 	}
 	defer func() {
 		if err := patchHelper.Patch(ctx, oxideMachine); err != nil {
-			retErr = errors.Join(retErr, fmt.Errorf("patching machine: %w", err))
+			retErr = fmt.Errorf("patching machine: %w", err)
 		}
 	}()
 
@@ -112,19 +112,19 @@ func (r *OxideMachineReconciler) Reconcile(
 	}
 
 	projectName := oxideCluster.Spec.Project
-	instanceName := fmt.Sprintf(
-		"capi-%s-%s",
-		oxideMachine.Namespace,
-		oxideMachine.Name,
-	)
-	diskName := fmt.Sprintf(
-		"capi-boot-%s-%s",
-		oxideMachine.Namespace,
-		oxideMachine.Name,
-	)
+	instanceName := getInstanceName(oxideMachine)
+	bootDiskName := getBootDiskName(oxideMachine)
+	nicName := getNicName(oxideMachine)
 
 	if !oxideMachine.DeletionTimestamp.IsZero() {
-		return r.handleDelete(ctx, oxideClient, oxideMachine, projectName, instanceName, diskName)
+		return r.handleDelete(
+			ctx,
+			oxideClient,
+			oxideMachine,
+			projectName,
+			instanceName,
+			bootDiskName,
+		)
 	}
 
 	controllerutil.AddFinalizer(oxideMachine, infrav1.MachineFinalizer)
@@ -133,12 +133,6 @@ func (r *OxideMachineReconciler) Reconcile(
 	// create all resources in a single request.
 	var instance *oxide.Instance
 	if oxideMachine.Spec.ProviderID == "" {
-		nicName := fmt.Sprintf(
-			"capi-%s-%s",
-			oxideMachine.Namespace,
-			oxideMachine.Name,
-		)
-
 		// Fetch the UserData from the bootstrap secret. If the secret isn't set on the spec yet,
 		// mark the OxideMachine as unready, and wait for an update to DataSecretName to trigger a
 		// new reconcile.
@@ -180,7 +174,7 @@ func (r *OxideMachineReconciler) Reconcile(
 				),
 				BootDisk: oxide.InstanceDiskAttachment{
 					Value: oxide.InstanceDiskAttachmentCreate{
-						Name: oxide.Name(diskName),
+						Name: oxide.Name(bootDiskName),
 						Size: oxide.ByteCount(oxideMachine.Spec.DiskSize.Value()),
 						DiskBackend: oxide.DiskBackend{
 							Value: oxide.DiskBackendDistributed{

@@ -110,11 +110,7 @@ func (r *OxideClusterReconciler) Reconcile(
 	//
 	// TODO: Use a load balancer instead, once Oxide has native load balancing support.
 	projectName := oxideCluster.Spec.Project
-	ipName := fmt.Sprintf(
-		"k8s-cluster-api-endpoint-%s-%s",
-		oxideCluster.Namespace,
-		oxideCluster.Name,
-	)
+	ipName := getFloatingIPName(oxideCluster)
 
 	if !oxideCluster.DeletionTimestamp.IsZero() {
 		if err := r.ensureFloatingIPDeleted(ctx, oxideClient, projectName, ipName); err != nil {
