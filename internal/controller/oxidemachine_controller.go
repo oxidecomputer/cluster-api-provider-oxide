@@ -187,6 +187,7 @@ func (r *OxideMachineReconciler) Reconcile(
 						},
 					},
 				},
+				Disks: disksFromOxideMachine(oxideMachine),
 				NetworkInterfaces: oxide.InstanceNetworkInterfaceAttachment{
 					Value: oxide.InstanceNetworkInterfaceAttachmentCreate{
 						Params: []oxide.InstanceNetworkInterfaceCreate{
@@ -524,4 +525,26 @@ func machineAddressesFromIPs(ips []oxide.ExternalIp) []clusterv1.MachineAddress 
 		}
 	}
 	return addresses
+}
+
+func disksFromOxideMachine(oxideMachine *infrav1.OxideMachine) []oxide.InstanceDiskAttachment {
+	disks := make([]oxide.InstanceDiskAttachment, len(oxideMachine.Spec.DataDisks))
+	for idx, dataDisk := range oxideMachine.Spec.DataDisks {
+		disks[idx] = oxide.InstanceDiskAttachment{
+			Value: oxide.InstanceDiskAttachmentCreate{
+				Name: oxide.Name(getDataDiskName(oxideMachine, idx)),
+				Size: oxide.ByteCount(dataDisk.Size.Value()),
+				DiskBackend: oxide.DiskBackend{
+					Value: oxide.DiskBackendDistributed{
+						DiskSource: oxide.DiskSource{
+							Value: oxide.DiskSourceBlank{
+								BlockSize: oxide.BlockSize(dataDisk.BlockSize),
+							},
+						},
+					},
+				},
+			},
+		}
+	}
+	return disks
 }

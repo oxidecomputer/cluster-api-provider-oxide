@@ -15,6 +15,7 @@ const (
 	nicPrefix        = "capi"
 	bootDiskPrefix   = "capi-boot"
 	floatingIPPrefix = "capi-fip"
+	dataDiskPrefix   = "capi-data-%d"
 )
 
 func hashTruncateName(name string, maxLength int) string {
@@ -50,4 +51,8 @@ func getNicName(obj metav1.Object) string {
 
 func getFloatingIPName(obj metav1.Object) string {
 	return getResourceName(floatingIPPrefix, obj)
+}
+
+func getDataDiskName(obj metav1.Object, idx int) string {
+	return getResourceName(fmt.Sprintf(dataDiskPrefix, idx), obj)
 }

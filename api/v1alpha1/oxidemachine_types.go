@@ -33,7 +33,7 @@ type OxideMachineSpec struct {
 	ProviderID string `json:"providerID,omitempty"`
 
 	// NCpus is the number of vCPUs to allocate for the instance.
-	NCpus int `json:"nCPUs"`
+	NCpus int64 `json:"nCPUs"`
 	// Memory is the amount of memory to allocate for the instance, in bytes.
 	Memory resource.Quantity `json:"memory"`
 	// DiskSize is the size of the boot disk to allocate for the instance, in bytes.
@@ -60,7 +60,22 @@ type OxideMachineSpec struct {
 	// IPPool is the Oxide IP pool to use for the instance's external IP. If not set, omit the
 	// external IP for the machine. If set, the IP pool must exist.
 	// +optional
-	IPPool string `json:"ipPool"`
+	IPPool string `json:"ipPool,omitempty"`
+
+	// DataDisks is the list of data disks to attach to the Oxide instance.
+	// +optional
+	DataDisks []DataDisk `json:"dataDisks,omitempty"`
+}
+
+type DataDisk struct {
+	// Size is the size of the disk.
+	Size resource.Quantity `json:"size"`
+
+	// BlockSize is the block size of the disk.
+	// +optional
+	// +kubebuilder:validation:Enum=512;2048;4096
+	// +kubebuilder:default=4096
+	BlockSize int64 `json:"blockSize"`
 }
 
 type OxideMachineInitializationStatus struct {

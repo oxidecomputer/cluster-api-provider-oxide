@@ -22,6 +22,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
+	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 
 	infrav1 "github.com/oxidecomputer/cluster-api-provider-oxide/api/v1alpha1"
@@ -262,4 +264,58 @@ func TestExternalIPsFromMachine(t *testing.T) {
 			assert.Equal(t, got, tc.want)
 		})
 	}
+}
+
+func TestDisksFromOxideMachine(t *testing.T) {
+	machine := &infrav1.OxideMachine{
+		Spec: infrav1.OxideMachineSpec{
+			DataDisks: []infrav1.DataDisk{
+				{
+					Size: resource.MustParse("20Gi"),
+				},
+				{
+					Size:      resource.MustParse("10Gi"),
+					BlockSize: 512,
+				},
+			},
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "machine",
+			Namespace: "default",
+		},
+	}
+	got := disksFromOxideMachine(machine)
+	want := []oxide.InstanceDiskAttachment{
+		{
+			Value: oxide.InstanceDiskAttachmentCreate{
+				Name: "capi-data-0-default-machine",
+				Size: oxide.ByteCount(20 * 1024 * 1024 * 1024),
+				DiskBackend: oxide.DiskBackend{
+					Value: oxide.DiskBackendDistributed{
+						DiskSource: oxide.DiskSource{
+							Value: oxide.DiskSourceBlank{
+								BlockSize: 0,
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			Value: oxide.InstanceDiskAttachmentCreate{
+				Name: "capi-data-1-default-machine",
+				Size: oxide.ByteCount(10 * 1024 * 1024 * 1024),
+				DiskBackend: oxide.DiskBackend{
+					Value: oxide.DiskBackendDistributed{
+						DiskSource: oxide.DiskSource{
+							Value: oxide.DiskSourceBlank{
+								BlockSize: 512,
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	assert.Equal(t, got, want)
 }
