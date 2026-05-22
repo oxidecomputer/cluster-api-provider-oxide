@@ -158,6 +158,21 @@ func (mr *MockOxideClientMockRecorder) InstanceDelete(arg0, arg1 any) *gomock.Ca
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "InstanceDelete", reflect.TypeOf((*MockOxideClient)(nil).InstanceDelete), arg0, arg1)
 }
 
+// InstanceExternalIpList mocks base method.
+func (m *MockOxideClient) InstanceExternalIpList(arg0 context.Context, arg1 oxide.InstanceExternalIpListParams) (*oxide.ExternalIpResultsPage, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "InstanceExternalIpList", arg0, arg1)
+	ret0, _ := ret[0].(*oxide.ExternalIpResultsPage)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// InstanceExternalIpList indicates an expected call of InstanceExternalIpList.
+func (mr *MockOxideClientMockRecorder) InstanceExternalIpList(arg0, arg1 any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "InstanceExternalIpList", reflect.TypeOf((*MockOxideClient)(nil).InstanceExternalIpList), arg0, arg1)
+}
+
 // InstanceNetworkInterfaceListAllPages mocks base method.
 func (m *MockOxideClient) InstanceNetworkInterfaceListAllPages(arg0 context.Context, arg1 oxide.InstanceNetworkInterfaceListParams) ([]oxide.InstanceNetworkInterface, error) {
 	m.ctrl.T.Helper()

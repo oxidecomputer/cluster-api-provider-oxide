@@ -76,6 +76,11 @@ spec:
               imageID:
                 description: ImageID is the ID of the boot disk image.
                 type: string
+              ipPool:
+                description: |-
+                  IPPool is the Oxide IP pool to use for the instance's external IP. If not set, omit the
+                  external IP for the machine. If set, the IP pool must exist.
+                type: string
               memory:
                 anyOf:
                 - type: integer

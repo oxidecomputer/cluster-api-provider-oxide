@@ -198,6 +198,7 @@ func (r *OxideMachineReconciler) Reconcile(
 						},
 					},
 				},
+				ExternalIps: externalIPsFromMachine(oxideMachine),
 			},
 		})
 		if err != nil {
@@ -248,7 +249,8 @@ func (r *OxideMachineReconciler) Reconcile(
 	oxideMachine.Status.Initialization.Provisioned = new(true)
 
 	// Look up instance addresses if not already known. As of this writing, the controller isn't
-	// responsible for managing NIC attachments after instance creation, so we don't need to refresh
+	// responsible for managing NIC attachments or ephemeral external IPs after instance creation,
+	// so we don't need to refresh
 	// after populating the address list initially.
 	if len(oxideMachine.Status.Addresses) == 0 {
 		nics, err := oxideClient.InstanceNetworkInterfaceListAllPages(
@@ -264,6 +266,19 @@ func (r *OxideMachineReconciler) Reconcile(
 		if err != nil {
 			return ctrl.Result{}, fmt.Errorf("getting NIC addresses: %w", err)
 		}
+
+		// Append external IPs if specified.
+		if oxideMachine.Spec.IPPool != "" {
+			ips, err := oxideClient.InstanceExternalIpList(ctx, oxide.InstanceExternalIpListParams{
+				Instance: oxide.NameOrId(instance.Id),
+			})
+			if err != nil {
+				return ctrl.Result{}, fmt.Errorf("listing external IPs: %w", err)
+			}
+			ipAddresses := machineAddressesFromIPs(ips.Items)
+			addresses = append(addresses, ipAddresses...)
+		}
+
 		oxideMachine.Status.Addresses = addresses
 	}
 
@@ -475,4 +490,38 @@ func machineAddressesFromNICs(
 		return nil, fmt.Errorf("unexpected IpStack type %T for NIC %s", nic.IpStack.Value, nic.Id)
 	}
 	return addresses, nil
+}
+
+func externalIPsFromMachine(oxideMachine *infrav1.OxideMachine) []oxide.ExternalIpCreate {
+	ips := []oxide.ExternalIpCreate{}
+
+	if oxideMachine.Spec.IPPool != "" {
+		ips = append(ips, oxide.ExternalIpCreate{
+			Value: oxide.ExternalIpCreateEphemeral{
+				PoolSelector: oxide.PoolSelector{
+					Value: oxide.PoolSelectorExplicit{
+						Pool: oxide.NameOrId(oxideMachine.Spec.IPPool),
+					},
+				},
+			},
+		})
+	}
+
+	return ips
+}
+
+func machineAddressesFromIPs(ips []oxide.ExternalIp) []clusterv1.MachineAddress {
+	var addresses []clusterv1.MachineAddress
+	for _, ip := range ips {
+		if ephemeralIP, ok := ip.AsEphemeral(); ok {
+			addresses = append(
+				addresses,
+				clusterv1.MachineAddress{
+					Type:    clusterv1.MachineExternalIP,
+					Address: ephemeralIP.Ip,
+				},
+			)
+		}
+	}
+	return addresses
 }

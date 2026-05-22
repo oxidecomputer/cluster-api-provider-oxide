@@ -56,6 +56,11 @@ type OxideMachineSpec struct {
 	// +optional
 	// +listType=set
 	SSHPublicKeys []string `json:"sshPublicKeys,omitempty"`
+
+	// IPPool is the Oxide IP pool to use for the instance's external IP. If not set, omit the
+	// external IP for the machine. If set, the IP pool must exist.
+	// +optional
+	IPPool string `json:"ipPool"`
 }
 
 type OxideMachineInitializationStatus struct {

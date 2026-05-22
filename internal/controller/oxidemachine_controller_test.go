@@ -24,6 +24,7 @@ import (
 	"go.uber.org/mock/gomock"
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 
+	infrav1 "github.com/oxidecomputer/cluster-api-provider-oxide/api/v1alpha1"
 	"github.com/oxidecomputer/cluster-api-provider-oxide/internal/cloud/mock"
 	"github.com/oxidecomputer/oxide.go/oxide"
 )
@@ -219,6 +220,46 @@ func TestMachineAddressesFromNICs(t *testing.T) {
 			addresses, err := machineAddressesFromNICs(tc.nics)
 			assert.NoError(t, err)
 			assert.ElementsMatch(t, addresses, tc.wantAddresses)
+		})
+	}
+}
+
+func TestExternalIPsFromMachine(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		machine *infrav1.OxideMachine
+		want    []oxide.ExternalIpCreate
+	}{
+		{
+			name: "pool",
+			machine: &infrav1.OxideMachine{
+				Spec: infrav1.OxideMachineSpec{
+					IPPool: "pool",
+				},
+			},
+			want: []oxide.ExternalIpCreate{
+				{
+					Value: oxide.ExternalIpCreateEphemeral{
+						PoolSelector: oxide.PoolSelector{
+							Value: oxide.PoolSelectorExplicit{
+								Pool: oxide.NameOrId("pool"),
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "no pool",
+			machine: &infrav1.OxideMachine{
+				Spec: infrav1.OxideMachineSpec{},
+			},
+			want: []oxide.ExternalIpCreate{},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := externalIPsFromMachine(tc.machine)
+			assert.Equal(t, got, tc.want)
 		})
 	}
 }

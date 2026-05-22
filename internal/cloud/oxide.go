@@ -32,6 +32,10 @@ type OxideClient interface {
 		context.Context,
 		oxide.InstanceNetworkInterfaceListParams,
 	) ([]oxide.InstanceNetworkInterface, error)
+	InstanceExternalIpList(
+		context.Context,
+		oxide.InstanceExternalIpListParams,
+	) (*oxide.ExternalIpResultsPage, error)
 
 	DiskDelete(context.Context, oxide.DiskDeleteParams) error
 }
