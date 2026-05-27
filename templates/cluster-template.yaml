@@ -1,0 +1,115 @@
+---
+apiVersion: cluster.x-k8s.io/v1beta2
+kind: Cluster
+metadata:
+  name: "${CLUSTER_NAME}"
+spec:
+  controlPlaneRef:
+    apiGroup: controlplane.cluster.x-k8s.io
+    kind: KubeadmControlPlane
+    name: "${CLUSTER_NAME}-control-plane"
+  infrastructureRef:
+    apiGroup: infrastructure.cluster.x-k8s.io
+    kind: OxideCluster
+    name: "${CLUSTER_NAME}"
+---
+apiVersion: infrastructure.cluster.x-k8s.io/v1alpha1
+kind: OxideCluster
+metadata:
+  name: "${CLUSTER_NAME}"
+spec:
+  credentialsRef:
+    name: "${OXIDE_SECRET:-oxide-credentials}"
+    namespace: "${OXIDE_SECRET_NAMESPACE:-default}"
+  project: "${OXIDE_PROJECT}"
+  vpc: "${OXIDE_VPC:-default}"
+  subnet: "${OXIDE_SUBNET:-default}"
+  ipPool: "${OXIDE_IP_POOL:-}"
+---
+apiVersion: controlplane.cluster.x-k8s.io/v1beta2
+kind: KubeadmControlPlane
+metadata:
+  name: "${CLUSTER_NAME}-control-plane"
+spec:
+  replicas: ${CONTROL_PLANE_MACHINE_COUNT}
+  version: "${KUBERNETES_VERSION}"
+  machineTemplate:
+    spec:
+      infrastructureRef:
+        apiGroup: infrastructure.cluster.x-k8s.io
+        kind: OxideMachineTemplate
+        name: "${CLUSTER_NAME}-control-plane"
+  kubeadmConfigSpec:
+    initConfiguration:
+      nodeRegistration:
+        kubeletExtraArgs:
+        - name: cloud-provider
+          value: external
+    joinConfiguration:
+      nodeRegistration:
+        kubeletExtraArgs:
+        - name: cloud-provider
+          value: external
+---
+apiVersion: bootstrap.cluster.x-k8s.io/v1beta2
+kind: KubeadmConfigTemplate
+metadata:
+  name: "${CLUSTER_NAME}-workers"
+spec:
+  template:
+    spec:
+      joinConfiguration:
+        nodeRegistration:
+          kubeletExtraArgs:
+          - name: cloud-provider
+            value: external
+---
+apiVersion: cluster.x-k8s.io/v1beta2
+kind: MachineDeployment
+metadata:
+  name: "${CLUSTER_NAME}-workers"
+spec:
+  clusterName: "${CLUSTER_NAME}"
+  replicas: ${WORKER_MACHINE_COUNT}
+  selector:
+    matchLabels: {}
+  template:
+    metadata:
+      labels:
+        node-role.kubernetes.io/worker: ""
+    spec:
+      clusterName: "${CLUSTER_NAME}"
+      version: "${KUBERNETES_VERSION}"
+      bootstrap:
+        configRef:
+          apiGroup: bootstrap.cluster.x-k8s.io
+          kind: KubeadmConfigTemplate
+          name: "${CLUSTER_NAME}-workers"
+      infrastructureRef:
+        apiGroup: infrastructure.cluster.x-k8s.io
+        kind: OxideMachineTemplate
+        name: "${CLUSTER_NAME}-workers"
+---
+apiVersion: infrastructure.cluster.x-k8s.io/v1alpha1
+kind: OxideMachineTemplate
+metadata:
+  name: "${CLUSTER_NAME}-control-plane"
+spec:
+  template:
+    spec:
+      nCPUs: ${CONTROL_PLANE_NCPUS:-4}
+      memory: "${CONTROL_PLANE_MEMORY:-8Gi}"
+      diskSize: "${CONTROL_PLANE_DISK_SIZE:-50Gi}"
+      imageID: "${OXIDE_IMAGE_ID}"
+---
+apiVersion: infrastructure.cluster.x-k8s.io/v1alpha1
+kind: OxideMachineTemplate
+metadata:
+  name: "${CLUSTER_NAME}-workers"
+spec:
+  template:
+    spec:
+      nCPUs: ${WORKER_NCPUS:-8}
+      memory: "${WORKER_MEMORY:-16Gi}"
+      diskSize: "${WORKER_DISK_SIZE:-100Gi}"
+      imageID: "${OXIDE_IMAGE_ID}"
