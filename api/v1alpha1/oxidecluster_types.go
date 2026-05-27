@@ -30,12 +30,13 @@ type OxideClusterSpec struct {
 	Subnet  string `json:"subnet"`
 
 	// CredentialsRef is the reference to the Secret resource containing Oxide API credentials. The
-	// Secret must contain `host` and `token` fields to authenticate to the API.
+	// Secret must contain `oxide-host` and `oxide-token` fields to authenticate to the API.
 	CredentialsRef SecretReference `json:"credentialsRef"`
 
 	// ControlPlaneEndpoint represents the host and port of the cluster's control plane. If
 	// ControlPlaneEndpoint.Host is set to an IP address by the user, provision a matching floating
 	// IP address. Otherwise, choose a floating IP based on IPPool and IPType.
+	// +optional
 	ControlPlaneEndpoint clusterv1.APIEndpoint `json:"controlPlaneEndpoint,omitempty"`
 
 	// IPPool is the Oxide IP pool to use for the cluster's floating IP. This field is not used if

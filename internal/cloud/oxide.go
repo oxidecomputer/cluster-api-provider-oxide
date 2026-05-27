@@ -41,8 +41,8 @@ type OxideClient interface {
 }
 
 const (
-	SecretDataHostKey  = "host"
-	SecretDataTokenKey = "token"
+	SecretDataHostKey  = "oxide-host"
+	SecretDataTokenKey = "oxide-token"
 )
 
 // NewOxideClient constructs an oxide.Client using the secret reference from the provided

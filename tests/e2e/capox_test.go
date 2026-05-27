@@ -43,8 +43,8 @@ var _ = Describe("capox", func() {
 				Namespace: namespace.Name,
 			},
 			StringData: map[string]string{
-				"host":  host,
-				"token": token,
+				"oxide-host":  host,
+				"oxide-token": token,
 			},
 		})).To(Succeed())
 	})

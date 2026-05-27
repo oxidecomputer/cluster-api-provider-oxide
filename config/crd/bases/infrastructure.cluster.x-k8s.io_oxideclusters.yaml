@@ -71,7 +71,7 @@ spec:
               credentialsRef:
                 description: |-
                   CredentialsRef is the reference to the Secret resource containing Oxide API credentials. The
-                  Secret must contain `host` and `token` fields to authenticate to the API.
+                  Secret must contain `oxide-host` and `oxide-token` fields to authenticate to the API.
                 properties:
                   name:
                     description: Name is the name of the Secret resource.
