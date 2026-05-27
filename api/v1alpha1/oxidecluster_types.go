@@ -26,12 +26,26 @@ const ClusterFinalizer = "oxidecluster.infrastructure.cluster.x-k8s.io"
 
 // OxideClusterSpec defines the desired state of OxideCluster
 type OxideClusterSpec struct {
-	CredentialsRef       corev1.SecretReference `json:"credentialsRef"`
-	Project              string                 `json:"project"`
-	VPC                  string                 `json:"vpc"`
-	Subnet               string                 `json:"subnet"`
-	IPPool               string                 `json:"ipPool"`
-	ControlPlaneEndpoint clusterv1.APIEndpoint  `json:"controlPlaneEndpoint,omitempty"`
+	CredentialsRef corev1.SecretReference `json:"credentialsRef"`
+	Project        string                 `json:"project"`
+	VPC            string                 `json:"vpc"`
+	Subnet         string                 `json:"subnet"`
+
+	// ControlPlaneEndpoint represents the host and port of the cluster's control plane. If
+	// ControlPlaneEndpoint.Host is set to an IP address by the user, provision a matching floating
+	// IP address. Otherwise, choose a floating IP based on IPPool and IPType.
+	ControlPlaneEndpoint clusterv1.APIEndpoint `json:"controlPlaneEndpoint,omitempty"`
+
+	// IPPool is the Oxide IP pool to use for the cluster's floating IP. This field is not used if
+	// ControlPlaneEndpoint.Host is set.
+	// +optional
+	IPPool string `json:"ipPool,omitempty"`
+
+	// IPType is the IP type (v4 or v6) to use for the cluster's floating IP. This field is not used
+	// if ControlPlaneEndpoint.Host or IPPool is set.
+	// +optional
+	// +kubebuilder:validation:Enum=v4;v6
+	IPType string `json:"ipType,omitempty"`
 }
 
 // OxideClusterStatus defines the observed state of OxideCluster.

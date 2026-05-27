@@ -50,7 +50,10 @@ spec:
             description: spec defines the desired state of OxideCluster
             properties:
               controlPlaneEndpoint:
-                description: APIEndpoint represents a reachable Kubernetes API endpoint.
+                description: |-
+                  ControlPlaneEndpoint represents the host and port of the cluster's control plane. If
+                  ControlPlaneEndpoint.Host is set to an IP address by the user, provision a matching floating
+                  IP address. Otherwise, choose a floating IP based on IPPool and IPType.
                 minProperties: 1
                 properties:
                   host:
@@ -81,6 +84,17 @@ spec:
                 type: object
                 x-kubernetes-map-type: atomic
               ipPool:
+                description: |-
+                  IPPool is the Oxide IP pool to use for the cluster's floating IP. This field is not used if
+                  ControlPlaneEndpoint.Host is set.
+                type: string
+              ipType:
+                description: |-
+                  IPType is the IP type (v4 or v6) to use for the cluster's floating IP. This field is not used
+                  if ControlPlaneEndpoint.Host or IPPool is set.
+                enum:
+                - v4
+                - v6
                 type: string
               project:
                 type: string
@@ -90,7 +104,6 @@ spec:
                 type: string
             required:
             - credentialsRef
-            - ipPool
             - project
             - subnet
             - vpc

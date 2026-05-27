@@ -127,7 +127,11 @@ func (r *OxideClusterReconciler) Reconcile(
 		return ctrl.Result{}, fmt.Errorf("ensuring floating ip: %w", err)
 	}
 	oxideCluster.Spec.ControlPlaneEndpoint.Host = ip.Ip
-	oxideCluster.Spec.ControlPlaneEndpoint.Port = 6443
+	// Use the default port of 6443 if not set. Note: if the user sets a non-default endpoint port,
+	// the bindPort on the KubeadmControlPlane must be set to the same value.
+	if oxideCluster.Spec.ControlPlaneEndpoint.Port == 0 {
+		oxideCluster.Spec.ControlPlaneEndpoint.Port = 6443
+	}
 
 	// We consider the OxideCluster to be Ready when the Oxide infrastructure that it manages (i.e.
 	// the floating IP) is provisioned. Note that upstream CAPI controllers won't provision
@@ -245,6 +249,42 @@ func (r *OxideClusterReconciler) Reconcile(
 	return ctrl.Result{}, nil
 }
 
+// floatingIPAllocator builds an oxide.Allocator to provision the floating IP address:
+// * If ControlPlaneEndpoint.Host is set, provision an IP with the desired address.
+// * Else if IPPool is set, provision a randomly chosen IP from the desired pool.
+// * Else choose an IP from the silo default IP pool, optionally passing the IP type (v4 or v6) if
+// specified.
+func floatingIPAllocator(oxideCluster *infrav1.OxideCluster) oxide.AddressAllocator {
+	endpoint := oxideCluster.Spec.ControlPlaneEndpoint
+	if endpoint.Host != "" {
+		return oxide.AddressAllocator{
+			Value: oxide.AddressAllocatorExplicit{
+				Ip: endpoint.Host,
+			},
+		}
+	}
+	if oxideCluster.Spec.IPPool != "" {
+		return oxide.AddressAllocator{
+			Value: oxide.AddressAllocatorAuto{
+				PoolSelector: oxide.PoolSelector{
+					Value: oxide.PoolSelectorExplicit{
+						Pool: oxide.NameOrId(oxideCluster.Spec.IPPool),
+					},
+				},
+			},
+		}
+	}
+	return oxide.AddressAllocator{
+		Value: oxide.AddressAllocatorAuto{
+			PoolSelector: oxide.PoolSelector{
+				Value: oxide.PoolSelectorAuto{
+					IpVersion: oxide.IpVersion(oxideCluster.Spec.IPType),
+				},
+			},
+		},
+	}
+}
+
 // ensureFloatingIPExists creates or views the floating IP.
 func (r *OxideClusterReconciler) ensureFloatingIPExists(
 	ctx context.Context,
@@ -253,37 +293,27 @@ func (r *OxideClusterReconciler) ensureFloatingIPExists(
 	projectName string,
 	ipName string,
 ) (*oxide.FloatingIp, error) {
-	log := logf.FromContext(ctx)
 	var ip *oxide.FloatingIp
 	var err error
 
-	// Create the floating IP, and view it if it already exists.
-	ip, err = oxideClient.FloatingIpCreate(ctx, oxide.FloatingIpCreateParams{
-		Project: oxide.NameOrId(projectName),
-		Body: &oxide.FloatingIpCreate{
-			Name: oxide.Name(ipName),
-			AddressAllocator: oxide.AddressAllocator{
-				Value: oxide.AddressAllocatorAuto{
-					PoolSelector: oxide.PoolSelector{
-						Value: oxide.PoolSelectorExplicit{
-							Pool: oxide.NameOrId(oxideCluster.Spec.IPPool),
-						},
-					},
-				},
-			},
-		},
+	ip, err = oxideClient.FloatingIpView(ctx, oxide.FloatingIpViewParams{
+		Project:    oxide.NameOrId(projectName),
+		FloatingIp: oxide.NameOrId(ipName),
 	})
 	if err != nil {
-		if !errors.Is(err, oxide.ErrObjectAlreadyExists) {
-			return nil, fmt.Errorf("creating floating ip: %w", err)
+		if !errors.Is(err, oxide.ErrObjectNotFound) {
+			return nil, fmt.Errorf("fetching existing floating ip: %w", err)
 		}
-		log.Info("floating ip already exists", "name", ipName)
-		ip, err = oxideClient.FloatingIpView(ctx, oxide.FloatingIpViewParams{
-			Project:    oxide.NameOrId(projectName),
-			FloatingIp: oxide.NameOrId(ipName),
+
+		ip, err = oxideClient.FloatingIpCreate(ctx, oxide.FloatingIpCreateParams{
+			Project: oxide.NameOrId(projectName),
+			Body: &oxide.FloatingIpCreate{
+				Name:             oxide.Name(ipName),
+				AddressAllocator: floatingIPAllocator(oxideCluster),
+			},
 		})
 		if err != nil {
-			return nil, fmt.Errorf("fetching existing floating ip: %w", err)
+			return nil, fmt.Errorf("creating floating ip: %w", err)
 		}
 	}
 

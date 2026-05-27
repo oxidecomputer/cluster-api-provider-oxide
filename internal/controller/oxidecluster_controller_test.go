@@ -27,6 +27,7 @@ import (
 	infrav1 "github.com/oxidecomputer/cluster-api-provider-oxide/api/v1alpha1"
 	"github.com/oxidecomputer/cluster-api-provider-oxide/internal/cloud/mock"
 	"github.com/oxidecomputer/oxide.go/oxide"
+	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 )
 
 // httpErr constructs an *oxide.HTTPError with a stub HTTPResponse so that its
@@ -52,19 +53,20 @@ func TestEnsureFloatingIPExists(t *testing.T) {
 		{
 			name: "create",
 			setup: func(m *mock.MockOxideClient) {
+				m.EXPECT().FloatingIpView(gomock.Any(), gomock.Any()).Return(nil, httpErr("ObjectNotFound"))
 				m.EXPECT().FloatingIpCreate(gomock.Any(), gomock.Any()).Return(wantIP, nil)
 			},
 		},
 		{
 			name: "adopt",
 			setup: func(m *mock.MockOxideClient) {
-				m.EXPECT().FloatingIpCreate(gomock.Any(), gomock.Any()).Return(nil, httpErr("ObjectAlreadyExists"))
 				m.EXPECT().FloatingIpView(gomock.Any(), gomock.Any()).Return(wantIP, nil)
 			},
 		},
 		{
 			name: "create error",
 			setup: func(m *mock.MockOxideClient) {
+				m.EXPECT().FloatingIpView(gomock.Any(), gomock.Any()).Return(nil, httpErr("ObjectNotFound"))
 				m.EXPECT().FloatingIpCreate(gomock.Any(), gomock.Any()).Return(nil, httpErr("InternalError"))
 			},
 			wantErr: "creating floating ip",
@@ -72,7 +74,6 @@ func TestEnsureFloatingIPExists(t *testing.T) {
 		{
 			name: "view error",
 			setup: func(m *mock.MockOxideClient) {
-				m.EXPECT().FloatingIpCreate(gomock.Any(), gomock.Any()).Return(nil, httpErr("ObjectAlreadyExists"))
 				m.EXPECT().FloatingIpView(gomock.Any(), gomock.Any()).Return(nil, httpErr("InternalError"))
 			},
 			wantErr: "fetching existing floating ip",
@@ -148,6 +149,82 @@ func TestEnsureFloatingIPDeleted(t *testing.T) {
 			} else {
 				assert.NoError(t, gotErr)
 			}
+		})
+	}
+}
+
+func TestFloatingIPAllocator(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		cluster *infrav1.OxideCluster
+		want    oxide.AddressAllocator
+	}{
+		{
+			name: "endpoint specified",
+			cluster: &infrav1.OxideCluster{
+				Spec: infrav1.OxideClusterSpec{
+					ControlPlaneEndpoint: clusterv1.APIEndpoint{
+						Host: "1.2.3.4",
+					},
+				},
+			},
+			want: oxide.AddressAllocator{
+				Value: oxide.AddressAllocatorExplicit{
+					Ip: "1.2.3.4",
+				},
+			},
+		},
+		{
+			name: "pool specified",
+			cluster: &infrav1.OxideCluster{
+				Spec: infrav1.OxideClusterSpec{
+					IPPool: "not-default",
+				},
+			},
+			want: oxide.AddressAllocator{
+				Value: oxide.AddressAllocatorAuto{
+					PoolSelector: oxide.PoolSelector{
+						Value: oxide.PoolSelectorExplicit{
+							Pool: oxide.NameOrId("not-default"),
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "type specified",
+			cluster: &infrav1.OxideCluster{
+				Spec: infrav1.OxideClusterSpec{
+					IPType: "v6",
+				},
+			},
+			want: oxide.AddressAllocator{
+				Value: oxide.AddressAllocatorAuto{
+					PoolSelector: oxide.PoolSelector{
+						Value: oxide.PoolSelectorAuto{
+							IpVersion: oxide.IpVersion("v6"),
+						},
+					},
+				},
+			},
+		},
+		{
+			name:    "default",
+			cluster: &infrav1.OxideCluster{},
+			want: oxide.AddressAllocator{
+				Value: oxide.AddressAllocatorAuto{
+					PoolSelector: oxide.PoolSelector{
+						Value: oxide.PoolSelectorAuto{
+							IpVersion: oxide.IpVersion(""),
+						},
+					},
+				},
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := floatingIPAllocator(tc.cluster)
+			assert.Equal(t, tc.want, got)
 		})
 	}
 }
