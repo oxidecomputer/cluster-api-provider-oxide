@@ -70,19 +70,19 @@ spec:
                 type: object
               credentialsRef:
                 description: |-
-                  SecretReference represents a Secret Reference. It has enough information to retrieve secret
-                  in any namespace
+                  CredentialsRef is the reference to the Secret resource containing Oxide API credentials. The
+                  Secret must contain `host` and `token` fields to authenticate to the API.
                 properties:
                   name:
-                    description: name is unique within a namespace to reference a
-                      secret resource.
+                    description: Name is the name of the Secret resource.
                     type: string
                   namespace:
-                    description: namespace defines the space within which the secret
-                      name must be unique.
+                    description: Namespace is the namespace of the Secret resource.
                     type: string
+                required:
+                - name
+                - namespace
                 type: object
-                x-kubernetes-map-type: atomic
               ipPool:
                 description: |-
                   IPPool is the Oxide IP pool to use for the cluster's floating IP. This field is not used if

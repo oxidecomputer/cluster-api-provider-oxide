@@ -17,7 +17,6 @@ limitations under the License.
 package v1alpha1
 
 import (
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 )
@@ -26,10 +25,13 @@ const ClusterFinalizer = "oxidecluster.infrastructure.cluster.x-k8s.io"
 
 // OxideClusterSpec defines the desired state of OxideCluster
 type OxideClusterSpec struct {
-	CredentialsRef corev1.SecretReference `json:"credentialsRef"`
-	Project        string                 `json:"project"`
-	VPC            string                 `json:"vpc"`
-	Subnet         string                 `json:"subnet"`
+	Project string `json:"project"`
+	VPC     string `json:"vpc"`
+	Subnet  string `json:"subnet"`
+
+	// CredentialsRef is the reference to the Secret resource containing Oxide API credentials. The
+	// Secret must contain `host` and `token` fields to authenticate to the API.
+	CredentialsRef SecretReference `json:"credentialsRef"`
 
 	// ControlPlaneEndpoint represents the host and port of the cluster's control plane. If
 	// ControlPlaneEndpoint.Host is set to an IP address by the user, provision a matching floating
@@ -46,6 +48,15 @@ type OxideClusterSpec struct {
 	// +optional
 	// +kubebuilder:validation:Enum=v4;v6
 	IPType string `json:"ipType,omitempty"`
+}
+
+// SecretReference is a reference to a Secret containing Oxide credentials. Adapted from
+// corev1.SecretReference, with both fields required.
+type SecretReference struct {
+	// Name is the name of the Secret resource.
+	Name string `json:"name"`
+	// Namespace is the namespace of the Secret resource.
+	Namespace string `json:"namespace"`
 }
 
 // OxideClusterStatus defines the observed state of OxideCluster.
