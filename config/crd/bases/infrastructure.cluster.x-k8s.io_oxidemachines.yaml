@@ -69,6 +69,7 @@ spec:
                 description: DataDisks is the list of data disks to attach to the
                   Oxide instance.
                 items:
+                  description: DataDisk is a data disk attached to the Oxide instance.
                   properties:
                     blockSize:
                       default: 4096
@@ -240,8 +241,16 @@ spec:
                 - type
                 x-kubernetes-list-type: map
               initialization:
+                description: |-
+                  Initialization provides observations of the OxideMachine initialization process.
+                  NOTE: Fields in this struct are part of the Cluster API contract and are used to orchestrate
+                  initial Machine provisioning.
+                minProperties: 1
                 properties:
                   provisioned:
+                    description: |-
+                      Provisioned is the provisioning state of the machine. This field is set to true once the
+                      Oxide instance is created. Part of the CAPI contract.
                     type: boolean
                 type: object
             type: object

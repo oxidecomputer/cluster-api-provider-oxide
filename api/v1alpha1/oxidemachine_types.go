@@ -67,6 +67,7 @@ type OxideMachineSpec struct {
 	DataDisks []DataDisk `json:"dataDisks,omitempty"`
 }
 
+// DataDisk is a data disk attached to the Oxide instance.
 type DataDisk struct {
 	// Size is the size of the disk.
 	Size resource.Quantity `json:"size"`
@@ -78,12 +79,22 @@ type DataDisk struct {
 	BlockSize int64 `json:"blockSize"`
 }
 
+// OxideMachineInitializationStatus provides observations of the OxideMachine initialization
+// process.
+// +kubebuilder:validation:MinProperties=1
 type OxideMachineInitializationStatus struct {
+	// Provisioned is the provisioning state of the machine. This field is set to true once the
+	// Oxide instance is created. Part of the CAPI contract.
+	// +optional
 	Provisioned *bool `json:"provisioned,omitempty"`
 }
 
 // OxideMachineStatus defines the observed state of OxideMachine.
 type OxideMachineStatus struct {
+	// Initialization provides observations of the OxideMachine initialization process.
+	// NOTE: Fields in this struct are part of the Cluster API contract and are used to orchestrate
+	// initial Machine provisioning.
+	// +optional
 	Initialization OxideMachineInitializationStatus `json:"initialization,omitempty"`
 
 	// For Kubernetes API conventions, see:

@@ -25,9 +25,17 @@ const ClusterFinalizer = "oxidecluster.infrastructure.cluster.x-k8s.io"
 
 // OxideClusterSpec defines the desired state of OxideCluster
 type OxideClusterSpec struct {
+	// Project is the name of the Oxide project in which the cluster will reside. The project should
+	// be created out of band and isn't managed by the controller.
 	Project string `json:"project"`
-	VPC     string `json:"vpc"`
-	Subnet  string `json:"subnet"`
+
+	// VPC is the name of the Oxide VPC in which the cluster will reside. The VPC should be created
+	// out of band and isn't managed by the controller.
+	VPC string `json:"vpc"`
+
+	// Subnet is the name of the Oxide subnet in which the cluster will reside. The subnet should be
+	// created out of band and isn't managed by the controller.
+	Subnet string `json:"subnet"`
 
 	// CredentialsRef is the reference to the Secret resource containing Oxide API credentials. The
 	// Secret must contain `oxide-host` and `oxide-token` fields to authenticate to the API.
@@ -90,7 +98,13 @@ type OxideClusterStatus struct {
 	Initialization OxideClusterInitializationStatus `json:"initialization,omitempty"`
 }
 
+// OxideClusterInitializationStatus provides observations of the OxideCluster initialization
+// process.
+// +kubebuilder:validation:MinProperties=1
 type OxideClusterInitializationStatus struct {
+	// Provisioned is the provisioning state of the cluster. This field is set to true once the
+	// Oxide floating IP address is created. Part of the CAPI contract.
+	// +optional
 	Provisioned *bool `json:"provisioned,omitempty"`
 }
 

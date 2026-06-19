@@ -26,9 +26,15 @@ type OxideMachineTemplateSpec struct {
 	Template OxideMachineTemplateResource `json:"template"`
 }
 
+// OxideMachineTemplateResource describes the data needed to create an OxideMachine from a template.
 type OxideMachineTemplateResource struct {
+	// ObjectMeta is the labels and annotations to apply to the OxideMachines created from this
+	// template.
+	// +optional
 	ObjectMeta clusterv1.ObjectMeta `json:"metadata,omitempty,omitzero"`
-	Spec       OxideMachineSpec     `json:"spec"`
+
+	// Spec is the specification of the desired behavior of the machine.
+	Spec OxideMachineSpec `json:"spec"`
 }
 
 // // OxideMachineTemplateStatus defines the observed state of OxideMachineTemplate.
