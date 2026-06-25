@@ -31,3 +31,6 @@ go.work
 
 # Test artifacts
 _artifacts/
+
+# Release artifacts (GoReleaser / build-installer output)
+dist/

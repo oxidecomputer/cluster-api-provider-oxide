@@ -1,0 +1,43 @@
+# GoReleaser configuration.
+# Cuts a GitHub release and publishes multi-arch (linux/amd64,linux/arm64)
+# container images to the ghcr repo. Runs in CI only; see
+# .github/workflows/release.yml. Test locally with `make release-snapshot`.
+#
+# Docs: https://goreleaser.com/customization/ko/
+version: 2
+
+# ko re-builds the binary itself using these settings (results are cached from
+# the build pipe). CGO is disabled so the image can run on the distroless base.
+builds:
+  - id: manager
+    main: ./cmd
+    binary: manager
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+
+# Build and publish multi-arch images with ko. Auth comes from the CI env
+# (docker login to ghcr.io); the base image defaults to the distroless,
+# nonroot cgr.dev/chainguard/static.
+kos:
+  - build: manager
+    repositories:
+      - ghcr.io/oxidecomputer/cluster-api-provider-oxide
+    platforms:
+      - linux/amd64
+      - linux/arm64
+    tags:
+      - "{{ .Tag }}"
+      - latest
+    # Push to the bare repo (no import-path or MD5 suffix).
+    bare: true
+    preserve_import_paths: false
+    # Reproducible image/file timestamps from the release commit.
+    creation_time: "{{ .CommitTimestamp }}"
+    ko_data_creation_time: "{{ .CommitTimestamp }}"
