@@ -1,0 +1,7 @@
+apiVersion: v2
+name: cluster-api-provider-oxide
+description: The Cluster API Provider for Oxide (CAPOx)
+type: application
+# chart version
+version: "0.0.1"
+appVersion: "0.0.1"
