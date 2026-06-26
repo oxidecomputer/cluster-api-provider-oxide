@@ -1,0 +1,7 @@
+apiVersion: v2
+name: cluster-api-provider-oxide-crds
+description: The Cluster API Provider for Oxide (CAPOx) Custom Resource Definitions
+type: application
+# chart version
+version: "0.0.1"
+appVersion: "0.0.1"

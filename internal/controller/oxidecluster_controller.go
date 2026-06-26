@@ -55,7 +55,7 @@ type OxideClusterReconciler struct {
 // +kubebuilder:rbac:groups=infrastructure.cluster.x-k8s.io,resources=oxideclusters/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=infrastructure.cluster.x-k8s.io,resources=oxideclusters/finalizers,verbs=update
 //
-// +kubebuilder:rbac:groups=infrastructure.machine.x-k8s.io,resources=oxidemachines,verbs=get;list;watch
+// +kubebuilder:rbac:groups=infrastructure.cluster.x-k8s.io,resources=oxidemachines,verbs=get;list;watch
 //
 // +kubebuilder:rbac:groups=cluster.x-k8s.io,resources=clusters,verbs=get;list;watch
 // +kubebuilder:rbac:groups=cluster.x-k8s.io,resources=machines,verbs=get;list;watch

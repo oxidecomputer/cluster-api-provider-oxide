@@ -1,6 +1,0 @@
-## Append samples of your project ##
-resources:
-- infrastructure_v1alpha1_oxidemachine.yaml
-- infrastructure_v1alpha1_oxidecluster.yaml
-- infrastructure_v1alpha1_oxidemachinetemplate.yaml
-# +kubebuilder:scaffold:manifestskustomizesamples

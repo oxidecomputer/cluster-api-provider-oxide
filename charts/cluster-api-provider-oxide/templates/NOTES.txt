@@ -1,2 +1,1 @@
 The Cluster API Oxide Provider (CAPOx) has been installed!
-You can now create OxideClusters, OxideMachines, and OxideMachineTemplates.

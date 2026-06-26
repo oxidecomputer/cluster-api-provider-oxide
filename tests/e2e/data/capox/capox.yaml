@@ -1,0 +1,888 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: oxide-system
+---
+---
+# Source: cluster-api-provider-oxide/crds/infrastructure.cluster.x-k8s.io_oxideclusters.yaml
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.21.0
+  name: oxideclusters.infrastructure.cluster.x-k8s.io
+spec:
+  group: infrastructure.cluster.x-k8s.io
+  names:
+    kind: OxideCluster
+    listKind: OxideClusterList
+    plural: oxideclusters
+    singular: oxidecluster
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.conditions[?(@.type=='Ready')].status
+      name: Ready
+      type: string
+    - jsonPath: .status.conditions[?(@.type=='FloatingIPAttached')].reason
+      name: Attachment
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: OxideCluster is the Schema for the oxideclusters API
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: spec defines the desired state of OxideCluster
+            properties:
+              controlPlaneEndpoint:
+                description: |-
+                  ControlPlaneEndpoint represents the host and port of the cluster's control plane. If
+                  ControlPlaneEndpoint.Host is set to an IP address by the user, provision a matching floating
+                  IP address. Otherwise, choose a floating IP based on IPPool and IPType.
+                minProperties: 1
+                properties:
+                  host:
+                    description: host is the hostname on which the API server is serving.
+                    maxLength: 512
+                    minLength: 1
+                    type: string
+                  port:
+                    description: port is the port on which the API server is serving.
+                    format: int32
+                    maximum: 65535
+                    minimum: 1
+                    type: integer
+                type: object
+              credentialsRef:
+                description: |-
+                  CredentialsRef is the reference to the Secret resource containing Oxide API credentials. The
+                  Secret must contain `oxide-host` and `oxide-token` fields to authenticate to the API.
+                properties:
+                  name:
+                    description: Name is the name of the Secret resource.
+                    type: string
+                  namespace:
+                    description: Namespace is the namespace of the Secret resource.
+                    type: string
+                required:
+                - name
+                - namespace
+                type: object
+              ipPool:
+                description: |-
+                  IPPool is the Oxide IP pool to use for the cluster's floating IP. This field is not used if
+                  ControlPlaneEndpoint.Host is set.
+                type: string
+              ipType:
+                description: |-
+                  IPType is the IP type (v4 or v6) to use for the cluster's floating IP. This field is not used
+                  if ControlPlaneEndpoint.Host or IPPool is set.
+                enum:
+                - v4
+                - v6
+                type: string
+              project:
+                type: string
+              subnet:
+                type: string
+              vpc:
+                type: string
+            required:
+            - credentialsRef
+            - project
+            - subnet
+            - vpc
+            type: object
+          status:
+            description: status defines the observed state of OxideCluster
+            properties:
+              conditions:
+                description: |-
+                  conditions represent the current state of the OxideCluster resource.
+                  Each condition has a unique type and reflects the status of a specific aspect of the
+                  resource.
+
+                  Standard condition types include:
+                  - "Available": the resource is fully functional
+                  - "Progressing": the resource is being created or updated
+                  - "Degraded": the resource failed to reach or maintain its desired state
+
+                  The status of each condition is one of True, False, or Unknown.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              initialization:
+                description: |-
+                  Initialization provides observations of the OxideCluster initialization process.
+                  NOTE: Fields in this struct are part of the Cluster API contract and are used to orchestrate
+                  initial Cluster provisioning.
+                properties:
+                  provisioned:
+                    type: boolean
+                type: object
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
+
+---
+# Source: cluster-api-provider-oxide/crds/infrastructure.cluster.x-k8s.io_oxidemachines.yaml
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.21.0
+  name: oxidemachines.infrastructure.cluster.x-k8s.io
+spec:
+  group: infrastructure.cluster.x-k8s.io
+  names:
+    kind: OxideMachine
+    listKind: OxideMachineList
+    plural: oxidemachines
+    singular: oxidemachine
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .metadata.labels.cluster\.x-k8s\.io/cluster-name
+      name: Cluster
+      type: string
+    - jsonPath: .spec.providerID
+      name: ProviderID
+      type: string
+    - jsonPath: .status.conditions[?(@.type=='Ready')].status
+      name: Ready
+      type: string
+    - jsonPath: .status.conditions[?(@.type=='Ready')].reason
+      name: Reason
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: OxideMachine is the Schema for the oxidemachines API
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: spec defines the desired state of OxideMachine
+            properties:
+              antiAffinityGroups:
+                description: |-
+                  AntiAffinityGroups is the list of anti-affinity group names or IDs that the Oxide instance
+                  should use. Anti-affinity groups should be created outside the operator, else instance
+                  creation will fail.
+                  https://docs.oxide.computer/guides/deploying-workloads#_affinity_and_anti_affinity
+                items:
+                  type: string
+                type: array
+                x-kubernetes-list-type: set
+              dataDisks:
+                description: DataDisks is the list of data disks to attach to the
+                  Oxide instance.
+                items:
+                  properties:
+                    blockSize:
+                      default: 4096
+                      description: BlockSize is the block size of the disk.
+                      enum:
+                      - 512
+                      - 2048
+                      - 4096
+                      format: int64
+                      type: integer
+                    size:
+                      anyOf:
+                      - type: integer
+                      - type: string
+                      description: Size is the size of the disk.
+                      pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                      x-kubernetes-int-or-string: true
+                  required:
+                  - size
+                  type: object
+                type: array
+              diskSize:
+                anyOf:
+                - type: integer
+                - type: string
+                description: DiskSize is the size of the boot disk to allocate for
+                  the instance, in bytes.
+                pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                x-kubernetes-int-or-string: true
+              imageID:
+                description: ImageID is the ID of the boot disk image.
+                type: string
+              ipPool:
+                description: |-
+                  IPPool is the Oxide IP pool to use for the instance's external IP. If not set, omit the
+                  external IP for the machine. If set, the IP pool must exist.
+                type: string
+              memory:
+                anyOf:
+                - type: integer
+                - type: string
+                description: Memory is the amount of memory to allocate for the instance,
+                  in bytes.
+                pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                x-kubernetes-int-or-string: true
+              nCPUs:
+                description: NCpus is the number of vCPUs to allocate for the instance.
+                format: int64
+                type: integer
+              providerID:
+                description: |-
+                  ProviderID is a unique identifier for the Oxide instance for use in correlating across
+                  kubernetes resources. Must match provider IDs generated by the Oxide cloud controller
+                  manager.
+                  https://cluster-api.sigs.k8s.io/reference/glossary#providerid
+                type: string
+              sshPublicKeys:
+                description: |-
+                  SSHPublicKeys is the list of SSH key names or IDs to attach to the Oxide instance. SSH keys
+                  should be created outside the operator, else instance creation will fail.
+                  https://docs.oxide.computer/guides/user-settings#manage-ssh-keys
+                items:
+                  type: string
+                type: array
+                x-kubernetes-list-type: set
+            required:
+            - diskSize
+            - imageID
+            - memory
+            - nCPUs
+            type: object
+          status:
+            description: status defines the observed state of OxideMachine
+            properties:
+              addresses:
+                description: addresses contains the associated addresses for the machine.
+                items:
+                  description: MachineAddress contains information for the node's
+                    address.
+                  properties:
+                    address:
+                      description: address is the machine address.
+                      maxLength: 256
+                      minLength: 1
+                      type: string
+                    type:
+                      description: type is the machine address type, one of Hostname,
+                        ExternalIP, InternalIP, ExternalDNS or InternalDNS.
+                      enum:
+                      - Hostname
+                      - ExternalIP
+                      - InternalIP
+                      - ExternalDNS
+                      - InternalDNS
+                      type: string
+                  required:
+                  - address
+                  - type
+                  type: object
+                type: array
+              conditions:
+                description: |-
+                  conditions represent the current state of the OxideMachine resource.
+                  Each condition has a unique type and reflects the status of a specific aspect of the
+                  resource.
+
+                  Standard condition types include:
+                  - "Available": the resource is fully functional
+                  - "Progressing": the resource is being created or updated
+                  - "Degraded": the resource failed to reach or maintain its desired state
+
+                  The status of each condition is one of True, False, or Unknown.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              initialization:
+                properties:
+                  provisioned:
+                    type: boolean
+                type: object
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
+
+---
+# Source: cluster-api-provider-oxide/crds/infrastructure.cluster.x-k8s.io_oxidemachinetemplates.yaml
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.21.0
+  name: oxidemachinetemplates.infrastructure.cluster.x-k8s.io
+spec:
+  group: infrastructure.cluster.x-k8s.io
+  names:
+    kind: OxideMachineTemplate
+    listKind: OxideMachineTemplateList
+    plural: oxidemachinetemplates
+    singular: oxidemachinetemplate
+  scope: Namespaced
+  versions:
+  - name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: OxideMachineTemplate is the Schema for the oxidemachinetemplates
+          API
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: spec defines the desired state of OxideMachineTemplate
+            properties:
+              template:
+                properties:
+                  metadata:
+                    description: |-
+                      ObjectMeta is metadata that all persisted resources must have, which includes all objects
+                      users must create. This is a copy of customizable fields from metav1.ObjectMeta.
+
+                      ObjectMeta is embedded in `Machine.Spec`, `MachineDeployment.Template` and `MachineSet.Template`,
+                      which are not top-level Kubernetes objects. Given that metav1.ObjectMeta has lots of special cases
+                      and read-only fields which end up in the generated CRD validation, having it as a subset simplifies
+                      the API and some issues that can impact user experience.
+
+                      During the [upgrade to controller-tools@v2](https://github.com/kubernetes-sigs/cluster-api/pull/1054)
+                      for v1alpha2, we noticed a failure would occur running Cluster API test suite against the new CRDs,
+                      specifically `spec.metadata.creationTimestamp in body must be of type string: "null"`.
+                      The investigation showed that `controller-tools@v2` behaves differently than its previous version
+                      when handling types from [metav1](k8s.io/apimachinery/pkg/apis/meta/v1) package.
+
+                      In more details, we found that embedded (non-top level) types that embedded `metav1.ObjectMeta`
+                      had validation properties, including for `creationTimestamp` (metav1.Time).
+                      The `metav1.Time` type specifies a custom json marshaller that, when IsZero() is true, returns `null`
+                      which breaks validation because the field isn't marked as nullable.
+
+                      In future versions, controller-tools@v2 might allow overriding the type and validation for embedded
+                      types. When that happens, this hack should be revisited.
+                    minProperties: 1
+                    properties:
+                      annotations:
+                        additionalProperties:
+                          type: string
+                        description: |-
+                          annotations is an unstructured key value map stored with a resource that may be
+                          set by external tools to store and retrieve arbitrary metadata. They are not
+                          queryable and should be preserved when modifying objects.
+                          More info: http://kubernetes.io/docs/user-guide/annotations
+                        type: object
+                      labels:
+                        additionalProperties:
+                          type: string
+                        description: |-
+                          labels is a map of string keys and values that can be used to organize and categorize
+                          (scope and select) objects. May match selectors of replication controllers
+                          and services.
+                          More info: http://kubernetes.io/docs/user-guide/labels
+                        type: object
+                    type: object
+                  spec:
+                    description: OxideMachineSpec defines the desired state of OxideMachine.
+                    properties:
+                      antiAffinityGroups:
+                        description: |-
+                          AntiAffinityGroups is the list of anti-affinity group names or IDs that the Oxide instance
+                          should use. Anti-affinity groups should be created outside the operator, else instance
+                          creation will fail.
+                          https://docs.oxide.computer/guides/deploying-workloads#_affinity_and_anti_affinity
+                        items:
+                          type: string
+                        type: array
+                        x-kubernetes-list-type: set
+                      dataDisks:
+                        description: DataDisks is the list of data disks to attach
+                          to the Oxide instance.
+                        items:
+                          properties:
+                            blockSize:
+                              default: 4096
+                              description: BlockSize is the block size of the disk.
+                              enum:
+                              - 512
+                              - 2048
+                              - 4096
+                              format: int64
+                              type: integer
+                            size:
+                              anyOf:
+                              - type: integer
+                              - type: string
+                              description: Size is the size of the disk.
+                              pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                              x-kubernetes-int-or-string: true
+                          required:
+                          - size
+                          type: object
+                        type: array
+                      diskSize:
+                        anyOf:
+                        - type: integer
+                        - type: string
+                        description: DiskSize is the size of the boot disk to allocate
+                          for the instance, in bytes.
+                        pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                        x-kubernetes-int-or-string: true
+                      imageID:
+                        description: ImageID is the ID of the boot disk image.
+                        type: string
+                      ipPool:
+                        description: |-
+                          IPPool is the Oxide IP pool to use for the instance's external IP. If not set, omit the
+                          external IP for the machine. If set, the IP pool must exist.
+                        type: string
+                      memory:
+                        anyOf:
+                        - type: integer
+                        - type: string
+                        description: Memory is the amount of memory to allocate for
+                          the instance, in bytes.
+                        pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                        x-kubernetes-int-or-string: true
+                      nCPUs:
+                        description: NCpus is the number of vCPUs to allocate for
+                          the instance.
+                        format: int64
+                        type: integer
+                      providerID:
+                        description: |-
+                          ProviderID is a unique identifier for the Oxide instance for use in correlating across
+                          kubernetes resources. Must match provider IDs generated by the Oxide cloud controller
+                          manager.
+                          https://cluster-api.sigs.k8s.io/reference/glossary#providerid
+                        type: string
+                      sshPublicKeys:
+                        description: |-
+                          SSHPublicKeys is the list of SSH key names or IDs to attach to the Oxide instance. SSH keys
+                          should be created outside the operator, else instance creation will fail.
+                          https://docs.oxide.computer/guides/user-settings#manage-ssh-keys
+                        items:
+                          type: string
+                        type: array
+                        x-kubernetes-list-type: set
+                    required:
+                    - diskSize
+                    - imageID
+                    - memory
+                    - nCPUs
+                    type: object
+                required:
+                - spec
+                type: object
+            required:
+            - template
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
+
+---
+# Source: cluster-api-provider-oxide/templates/serviceaccount.yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: cluster-api-provider-oxide
+  labels:
+    helm.sh/chart: cluster-api-provider-oxide-0.0.1
+    app.kubernetes.io/name: cluster-api-provider-oxide
+    app.kubernetes.io/instance: capox
+    app.kubernetes.io/version: "0.0.1"
+    app.kubernetes.io/managed-by: Helm
+automountServiceAccountToken: true
+---
+# Source: cluster-api-provider-oxide/templates/clusterrole.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: cluster-api-provider-oxide
+  labels:
+    helm.sh/chart: cluster-api-provider-oxide-0.0.1
+    app.kubernetes.io/name: cluster-api-provider-oxide
+    app.kubernetes.io/instance: capox
+    app.kubernetes.io/version: "0.0.1"
+    app.kubernetes.io/managed-by: Helm
+# Rules below are generated from the +kubebuilder:rbac markers in
+# internal/controller via `make manifests` (controller-gen), written to
+# generated/clusterrole.yaml, and read in here -- so they are never hand-edited. They
+# are cluster-wide on purpose: the controller reads Oxide credential Secrets
+# (OxideCluster.spec.credentialsRef) and bootstrap data Secrets, which can live
+# in any namespace where a workload cluster is defined. The cached client backs
+# these reads with a list/watch, so namespace- or name-scoped RBAC can't narrow
+# it. This matches CAPA/CAPZ/CAPV.
+rules:
+  - apiGroups:
+    - ""
+    resources:
+    - secrets
+    verbs:
+    - get
+    - list
+    - watch
+  - apiGroups:
+    - cluster.x-k8s.io
+    resources:
+    - clusters
+    - machines
+    verbs:
+    - get
+    - list
+    - watch
+  - apiGroups:
+    - infrastructure.cluster.x-k8s.io
+    resources:
+    - oxideclusters
+    - oxidemachines
+    verbs:
+    - create
+    - delete
+    - get
+    - list
+    - patch
+    - update
+    - watch
+  - apiGroups:
+    - infrastructure.cluster.x-k8s.io
+    resources:
+    - oxideclusters/finalizers
+    - oxidemachines/finalizers
+    verbs:
+    - update
+  - apiGroups:
+    - infrastructure.cluster.x-k8s.io
+    resources:
+    - oxideclusters/status
+    - oxidemachines/status
+    verbs:
+    - get
+    - patch
+    - update
+---
+# Source: cluster-api-provider-oxide/templates/clusterrole.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: cluster-api-provider-oxide
+  labels:
+    helm.sh/chart: cluster-api-provider-oxide-0.0.1
+    app.kubernetes.io/name: cluster-api-provider-oxide
+    app.kubernetes.io/instance: capox
+    app.kubernetes.io/version: "0.0.1"
+    app.kubernetes.io/managed-by: Helm
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-api-provider-oxide
+subjects:
+- kind: ServiceAccount
+  name: cluster-api-provider-oxide
+  namespace: oxide-system
+
+---
+# Source: cluster-api-provider-oxide/templates/role.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: cluster-api-provider-oxide
+  labels:
+    helm.sh/chart: cluster-api-provider-oxide-0.0.1
+    app.kubernetes.io/name: cluster-api-provider-oxide
+    app.kubernetes.io/instance: capox
+    app.kubernetes.io/version: "0.0.1"
+    app.kubernetes.io/managed-by: Helm
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - configmaps
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - update
+  - patch
+  - delete
+- apiGroups:
+  - coordination.k8s.io
+  resources:
+  - leases
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - update
+  - patch
+  - delete
+- apiGroups:
+  - ""
+  resources:
+  - events
+  verbs:
+  - create
+  - patch
+---
+# Source: cluster-api-provider-oxide/templates/role.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: cluster-api-provider-oxide
+  labels:
+    helm.sh/chart: cluster-api-provider-oxide-0.0.1
+    app.kubernetes.io/name: cluster-api-provider-oxide
+    app.kubernetes.io/instance: capox
+    app.kubernetes.io/version: "0.0.1"
+    app.kubernetes.io/managed-by: Helm
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: cluster-api-provider-oxide
+subjects:
+- kind: ServiceAccount
+  name: cluster-api-provider-oxide
+  namespace: oxide-system
+---
+# Source: cluster-api-provider-oxide/templates/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cluster-api-provider-oxide
+  labels:
+    helm.sh/chart: cluster-api-provider-oxide-0.0.1
+    app.kubernetes.io/name: cluster-api-provider-oxide
+    app.kubernetes.io/instance: capox
+    app.kubernetes.io/version: "0.0.1"
+    app.kubernetes.io/managed-by: Helm
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: cluster-api-provider-oxide
+      app.kubernetes.io/instance: capox
+  template:
+    metadata:
+      labels:
+        helm.sh/chart: cluster-api-provider-oxide-0.0.1
+        app.kubernetes.io/name: cluster-api-provider-oxide
+        app.kubernetes.io/instance: capox
+        app.kubernetes.io/version: "0.0.1"
+        app.kubernetes.io/managed-by: Helm
+    spec:
+      serviceAccountName: cluster-api-provider-oxide
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: cluster-api-provider-oxide
+          args:
+            - --leader-elect
+            - --health-probe-bind-address=:8081
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+          image: "ghcr.io/oxidecomputer/cluster-api-provider-oxide:dev"
+          imagePullPolicy: IfNotPresent
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8081
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8081
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            limits:
+              memory: 256Mi
+            requests:
+              cpu: 100m
+              memory: 128Mi
+      terminationGracePeriodSeconds: 10

@@ -47,14 +47,15 @@ help: ## Display this help.
 
 ##@ Development
 
-.PHONY: manifests
-manifests: ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
-	$(CONTROLLER_GEN) rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases
-
 .PHONY: generate
-generate: ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations, as well as `go generate`-d files.
+generate: ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations, as well as `go generate` files.
 	go generate ./...
 	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./..."
+	$(CONTROLLER_GEN) rbac:roleName=manager-role crd paths="./..." \
+		output:crd:artifacts:config=charts/cluster-api-provider-oxide/crds \
+		output:rbac:artifacts:config=charts/cluster-api-provider-oxide/generated
+	mv charts/cluster-api-provider-oxide/generated/role.yaml \
+		charts/cluster-api-provider-oxide/generated/clusterrole.yaml
 
 .PHONY: verify
 verify: ## Run linters and vetting on codebase with no commit checks and no mutations.
@@ -73,7 +74,7 @@ fix: golangci-lint ## Perform lint, fmt, and mod/sum file fixes
 precommit: fix verify test ## Run all precommit checks
 
 .PHONY: test
-test: manifests generate setup-envtest ## Run tests.
+test: generate setup-envtest ## Run tests.
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" go test -v $$(go list ./... | grep -v /e2e) -coverprofile cover.out
 
 # The default setup assumes Kind is pre-installed and builds/loads the Manager Docker image locally.
@@ -97,7 +98,7 @@ setup-test-e2e: ## Set up a Kind cluster for e2e tests if it does not exist
 	esac
 
 .PHONY: test-e2e
-test-e2e: manifests generate tools setup-test-e2e ## Run e2e tests on a local KinD cluster
+test-e2e: generate tools setup-test-e2e render-e2e-ccm render-e2e-capox ## Run e2e tests on a local KinD cluster
 	@mkdir -p $(ARTIFACTS)
 
 	# Build the manager image into the local Docker daemon under the exact name the
@@ -118,30 +119,45 @@ test-e2e: manifests generate tools setup-test-e2e ## Run e2e tests on a local Ki
 cleanup-test-e2e: ## Tear down the Kind cluster used for e2e tests
 	@$(KIND) delete cluster --name $(KIND_CLUSTER_NAME)
 
-CCM_RELEASE ?= capox
-CCM_VERSION ?= 0.6.0
+CCM_RELEASE ?= ccm
+# Leave CCM_VERSION empty to let Helm resolve the latest published chart;
+# set it (e.g. CCM_VERSION=0.7.0) to pin a specific version.
+CCM_VERSION ?=
 
 .PHONY: render-e2e-ccm
 render-e2e-ccm: ## Render the Oxide CCM manifest used by e2e tests.
 	@mkdir -p tests/e2e/data/ccm
 	helm template $(CCM_RELEASE) \
 	  oci://ghcr.io/oxidecomputer/helm-charts/oxide-cloud-controller-manager \
-	  --version $(CCM_VERSION) \
+	  $(if $(CCM_VERSION),--version $(CCM_VERSION),) \
 	  --namespace kube-system \
 	  > tests/e2e/data/ccm/oxide-ccm.yaml
+
+.PHONY: render-e2e-capox
+render-e2e-capox: generate ## Render the Cluster API Oxide Provider used by e2e tests.
+	@mkdir -p tests/e2e/data/capox
+	# clusterctl defaults a provider's target namespace from a Namespace object in
+	# the components YAML (inspectTargetNamespace). helm template never emits one,
+	# so prepend it; clusterctl then stamps it onto every namespaced object.
+	printf 'apiVersion: v1\nkind: Namespace\nmetadata:\n  name: oxide-system\n---\n' \
+		> tests/e2e/data/capox/capox.yaml
+	helm template capox charts/cluster-api-provider-oxide \
+		--namespace oxide-system \
+		--include-crds \
+		--set image.tag=dev >> tests/e2e/data/capox/capox.yaml
 
 ##@ Build
 
 .PHONY: build
-build: manifests generate ## Build manager binary.
+build: generate ## Build manager binary.
 	go build -o bin/manager cmd/main.go
 
 .PHONY: run
-run: manifests generate ## Run a controller from your host.
+run: generate ## Run a controller from your host.
 	go run ./cmd/main.go
 
 .PHONY: build-installer
-build-installer: manifests generate ## Generate a consolidated YAML with CRDs and deployment.
+build-installer: generate ## Generate a consolidated YAML with CRDs and deployment.
 	mkdir -p dist
 	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG}
 	$(KUSTOMIZE) build config/default > dist/install.yaml
@@ -153,23 +169,20 @@ ifndef ignore-not-found
 endif
 
 .PHONY: install
-install: manifests ## Install CRDs into the K8s cluster specified in ~/.kube/config.
-	@out="$$( $(KUSTOMIZE) build config/crd 2>/dev/null || true )"; \
-	if [ -n "$$out" ]; then echo "$$out" | $(KUBECTL) apply -f -; else echo "No CRDs to install; skipping."; fi
+install: generate ## Install CRDs into the K8s cluster specified in ~/.kube/config.
+	helm upgrade --install capox-crds-dev charts/cluster-api-provider-oxide-crds
 
 .PHONY: uninstall
-uninstall: manifests ## Uninstall CRDs from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
-	@out="$$( $(KUSTOMIZE) build config/crd 2>/dev/null || true )"; \
-	if [ -n "$$out" ]; then echo "$$out" | $(KUBECTL) delete --ignore-not-found=$(ignore-not-found) -f -; else echo "No CRDs to delete; skipping."; fi
+uninstall: ## Uninstall CRDs from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
+	helm uninstall --install capox-crds-dev charts/cluster-api-provider-oxide-crds
 
 .PHONY: deploy
-deploy: manifests ## Deploy controller to the K8s cluster specified in ~/.kube/config.
-	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG}
-	$(KUSTOMIZE) build config/default | $(KUBECTL) apply -f -
+deploy: generate ## Deploy controller to the K8s cluster specified in ~/.kube/config.
+	helm upgrade --install capox-dev charts/cluster-api-provider-oxide --include-crds --namespace oxide-system --wait
 
 .PHONY: undeploy
 undeploy: ## Undeploy controller from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
-	$(KUSTOMIZE) build config/default | $(KUBECTL) delete --ignore-not-found=$(ignore-not-found) -f -
+	helm uninstall capox-dev --namespace oxide-system --wait
 
 ##@ Dependencies
 

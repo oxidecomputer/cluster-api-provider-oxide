@@ -50,8 +50,8 @@ providers:
   type: InfrastructureProvider
   versions:
   - name: v0.1.0
-    value: ../../../config/default
-    type: kustomize
+    value: ../data/capox/capox.yaml
+    type: url
     contract: v1beta2
     files:
     - sourcePath: "../data/shared/oxide/metadata.yaml"
