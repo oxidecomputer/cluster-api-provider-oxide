@@ -140,13 +140,6 @@ build: manifests generate ## Build manager binary.
 run: manifests generate ## Run a controller from your host.
 	go run ./cmd/main.go
 
-# # If you wish to build the manager image targeting other platforms you can use the --platform flag.
-# # (i.e. docker build --platform linux/arm64). However, you must enable docker buildKit for it.
-# # More info: https://docs.docker.com/develop/develop-images/build_enhancements/
-# .PHONY: docker-build
-# docker-build: ## Build docker image with the manager.
-# 	$(CONTAINER_TOOL) build -t ${IMG} .
-
 .PHONY: build-installer
 build-installer: manifests generate ## Generate a consolidated YAML with CRDs and deployment.
 	mkdir -p dist
@@ -226,10 +219,8 @@ setup-envtest: ## Download the binaries required for ENVTEST in the local bin di
 
 .PHONY: golangci-lint
 golangci-lint: ## Compile custom golangci-lint
-	@test -f .custom-gcl.yml && { \
-		echo "Building custom golangci-lint with plugins..." && \
-		go tool -modfile $(TOOLS_MOD) golangci-lint custom --destination $(LOCALBIN) --name golangci-lint-custom; \
-	} || true
+	@echo "Building custom golangci-lint with plugins..."
+	go tool -modfile $(TOOLS_MOD) golangci-lint custom --destination $(LOCALBIN) --name golangci-lint-custom
 
 define gomodver
 $(shell go list -m -f '{{if .Replace}}{{.Replace.Version}}{{else}}{{.Version}}{{end}}' $(1) 2>/dev/null)
