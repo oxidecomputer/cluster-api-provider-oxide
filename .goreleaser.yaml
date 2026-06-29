@@ -42,7 +42,7 @@ builds:
 kos:
   - build: manager
     repositories:
-      - "{{ .Env.IMAGE_REPO }}"
+      - ghcr.io/bwagner5/capox
     platforms:
       - linux/amd64
       - linux/arm64
@@ -67,6 +67,6 @@ publishers:
       - helm-only
     extra_files:
       - glob: ./out/helm/*.tgz
-    cmd: helm push "{{ abs .ArtifactPath }}" "oci://{{ .Env.IMAGE_REPO }}"
+    cmd: helm push "{{ abs .ArtifactPath }}" "oci://{{ .Env.HELM_OCI_REPO }}"
     env:
-      - HELM_OCI_REPO={{ .Env.IMAGE_REPO }}
+      - HELM_OCI_REPO={{ .Env.HELM_OCI_REPO }}

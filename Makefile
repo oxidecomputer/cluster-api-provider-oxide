@@ -1,9 +1,9 @@
 # Image URL to use all building/pushing image targets
-IMAGE_REPO ?= ghcr.io/oxidecomputer/cluster-api-provider-oxide
+IMAGE_REPO ?= ghcr.io/bwagner5/capox
 IMAGE_TAG ?= dev
 IMG ?= $(IMAGE_REPO):$(IMAGE_TAG)
 KO_DOCKER_REPO ?= $(IMAGE_REPO)
-MAKEFILE_PATH := $(shell cd "$(dirname "$0")" ; pwd -P )
+MAKEFILE_PATH := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 TOOLS_MOD := $(MAKEFILE_PATH)/tools/go.mod
 GO_TOOL := go tool -modfile=$(TOOLS_MOD)
 
@@ -202,6 +202,7 @@ KUBECTL ?= kubectl
 KIND ?= $(GO_TOOL) kind
 KO ?= $(GO_TOOL) ko
 KUSTOMIZE ?= $(GO_TOOL) kustomize
+export HELM_OCI_REPO=$(IMAGE_REPO)/helm-charts
 GORELEASER ?= $(GO_TOOL) goreleaser
 ENVTEST ?= go tool setup-envtest # this tool is in the main go.mod so the version stays in-sync
 GOLANGCI_LINT ?= $(LOCALBIN)/golangci-lint-custom
