@@ -16,12 +16,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Clone the code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0 # GoReleaser needs full history and tags
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
           cache-dependency-path: |
@@ -29,7 +29,7 @@ jobs:
             tools/go.sum
 
       - name: Cache local tool binaries
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: bin
           key: tools-release-${{ runner.os }}-${{ hashFiles('Makefile', 'tools/go.sum') }}

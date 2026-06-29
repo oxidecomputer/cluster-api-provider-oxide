@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Clone the code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Go
         uses: actions/setup-go@v6
@@ -21,7 +21,7 @@ jobs:
             tools/go.sum
 
       - name: Cache local tool binaries
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: bin
           key: tools-test-${{ runner.os }}-${{ hashFiles('Makefile', '.custom-gcl.yml', 'tools/go.sum') }}
