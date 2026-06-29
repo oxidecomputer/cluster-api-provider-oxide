@@ -242,10 +242,10 @@ endef
 ##@ Continuous Integration and Release
 
 .PHONY: ci-verify
-ci-verify: fix verify ## Verify fmt, linters, mod/sum files, etc. and fail if any mutate.
+ci-verify: fix verify test ## Verify fmt, linters, mod/sum files, etc. and fail if any mutate.
 	@git diff --exit-code || { \
 		echo; \
-		echo "ERROR: working tree is dirty after 'make fix'."; \
+		echo "ERROR: working tree is dirty after 'make ci-verify'."; \
 		echo "Run 'make fix' locally and commit the result."; \
 		exit 1; \
 	}

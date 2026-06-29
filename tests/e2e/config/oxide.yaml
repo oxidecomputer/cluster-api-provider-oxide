@@ -9,7 +9,6 @@ variables:
   OXIDE_PROJECT: "carp"
   OXIDE_VPC: "default"
   OXIDE_SUBNET: "default"
-  OXIDE_IP_POOL: "eng-vpn"
   OXIDE_IMAGE_ID: "4b2725ec-4285-4fd4-ba04-de714c55fcfc"
   CNI: "./data/cni/calico.yaml"
   CCM: "./data/ccm/oxide-ccm.yaml"

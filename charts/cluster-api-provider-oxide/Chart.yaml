@@ -5,3 +5,6 @@ type: application
 # chart version
 version: "0.0.1"
 appVersion: "0.0.1"
+home: https://github.com/bwagner5/capox
+sources:
+  - https://github.com/bwagner5/capox

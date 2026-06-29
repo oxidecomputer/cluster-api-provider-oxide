@@ -6,6 +6,20 @@
 # Docs: https://goreleaser.com/customization/ko/
 version: 2
 
+before:
+  hooks:
+    - mkdir -p ./out/helm
+    - >-
+      helm package ./charts/cluster-api-provider-oxide
+      --version {{ .Version }}
+      --app-version {{ .Version }}
+      --destination ./out/helm
+    - >-
+      helm package ./charts/cluster-api-provider-oxide-crds
+      --version {{ .Version }}
+      --app-version {{ .Version }}
+      --destination ./out/helm
+
 # ko re-builds the binary itself using these settings (results are cached from
 # the build pipe). CGO is disabled so the image can run on the distroless base.
 builds:
@@ -28,7 +42,7 @@ builds:
 kos:
   - build: manager
     repositories:
-      - ghcr.io/oxidecomputer/cluster-api-provider-oxide
+      - "{{ .Env.IMAGE_REPO }}"
     platforms:
       - linux/amd64
       - linux/arm64
@@ -41,3 +55,18 @@ kos:
     # Reproducible image/file timestamps from the release commit.
     creation_time: "{{ .CommitTimestamp }}"
     ko_data_creation_time: "{{ .CommitTimestamp }}"
+
+checksum:
+  name_template: "checksums.txt"
+  extra_files:
+    - glob: ./out/helm/*.tgz
+
+publishers:
+  - name: helm-oci
+    ids:
+      - helm-only
+    extra_files:
+      - glob: ./out/helm/*.tgz
+    cmd: helm push "{{ abs .ArtifactPath }}" "oci://{{ .Env.IMAGE_REPO }}"
+    env:
+      - HELM_OCI_REPO={{ .Env.IMAGE_REPO }}
