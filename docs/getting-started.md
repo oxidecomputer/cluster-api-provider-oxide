@@ -63,8 +63,14 @@ CAPI uses a management cluster to configure and deploy workload clusters. Any Ku
 
 ```
 export OXIDE_MANAGEMENT_CLUSTER=capi-management
-kind create cluster --name $OXIDE_MANAGEMENT_CLUSTER
+kind create cluster --name $OXIDE_MANAGEMENT_CLUSTER --wait 30s
 kubectl config use-context kind-$OXIDE_MANAGEMENT_CLUSTER
+```
+
+Next, install the `clusterctl` tool by following the [installation docs](https://cluster-api.sigs.k8s.io/user/quick-start.html#install-clusterctl). Use the `clusterctl` CLI to install the core CAPI Kubernetes resources and controllers to the management cluster. 
+
+```
+clusterctl init
 ```
 
 Add the Oxide credentials to the management cluster to allow the Oxide CAPI provider to call the Oxide API. 
@@ -76,25 +82,19 @@ kubectl create secret generic oxide-credentials \
     --from-literal=oxide-token=${OXIDE_TOKEN}
 ```
 
-If developing the Oxide CAPI provider locally, build and upload the controller Docker image:
+Now, install Cluster API Provider for Oxide:
 
 ```
-export OXIDE_CAPI_IMG=ghcr.io/oxidecomputer/cluster-api-provider-oxide:dev
-make docker-build
-kind load docker-image $OXIDE_CAPI_IMG --name $OXIDE_MANAGEMENT_CLUSTER
+helm upgrade --install \
+    --namespace capox-system \
+    --create-namespace \
+    --version 0.0.12  \
+    --wait \
+    --set image.repository=ghcr.io/bwagner5/capox/cluster-api-provider-oxide \
+    capox \
+    oci://ghcr.io/bwagner5/capox/helm-charts/cluster-api-provider-oxide
 ```
 
-Next, install the `clusterctl` tool by following the [installation docs](https://cluster-api.sigs.k8s.io/user/quick-start.html#install-clusterctl). Use the `clusterctl` CLI to install the core CAPI Kubernetes resources and controllers to the management cluster. 
-
-```
-clusterctl init
-```
-
-Install the Oxide CAPI provider resources and controllers to the management cluster:
-
-```
-make deploy
-```
 
 ## Provision a Workload Cluster with the Oxide CAPI provider
 
@@ -150,6 +150,8 @@ Apply the rendered quickstart manifest to the management cluster:
 kubectl apply -f "$OXIDE_CLUSTER_QUICKSTART_MANIFEST"
 ```
 
+It will take a few minutes for a control plane node to start and get a floating IP attached. Nodes will not get to a "Ready" state until we install the Oxide CCM and a CNI. Let's do that now.
+
 In order to configure the workload cluster, we'll need to fetch its kubeconfig:
 
 ```
@@ -177,3 +179,49 @@ KUBECONFIG="$OXIDE_QUICKSTART_KUBECONFIG" helm upgrade --install quickstart \
     oci://ghcr.io/oxidecomputer/helm-charts/oxide-cloud-controller-manager \
     --namespace kube-system
 ```
+
+Nodes should now be transitioning to a "Ready" state. You can monitor this with clusterctl or by watching nodes in the workload cluster:
+
+```
+clusterctl describe cluster quickstart
+```
+
+## Deploy an Application to the Workload Cluster
+
+To see the workload cluster in action, we'll deploy nginx. 
+
+```
+kubectl create deployment hello-oxide \
+    --image=mirror.gcr.io/library/nginx \
+    --port=80 \
+    --kubeconfig="$OXIDE_QUICKSTART_KUBECONFIG"
+
+kubectl expose deployment hello-oxide \
+    --port=80 \
+    --target-port=80 \
+    --type=LoadBalancer \
+    --kubeconfig="$OXIDE_QUICKSTART_KUBECONFIG"
+```
+
+Watch the external IPs of the service. Once they are populated, you can access it via your browser or a curl:
+
+```
+kubectl get service hello-oxide -w --kubeconfig="$OXIDE_QUICKSTART_KUBECONFIG"
+```
+
+## Tear Down the Workload Cluster
+
+When you're done experimenting with the workload cluster, you can easily delete it by deleting the cluster resource from the management cluster. 
+
+Make sure that you are using the management cluster's kubectl context. If you are, then you should see the quickstart cluster when listing clusters:
+
+```
+kubectl get clusters
+```
+
+Now, delete the cluster:
+
+```
+kubectl delete cluster quickstart
+```
+
