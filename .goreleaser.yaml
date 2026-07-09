@@ -6,6 +6,8 @@
 # Docs: https://goreleaser.com/customization/ko/
 version: 2
 
+env:
+  - IMAGE_TAG={{ .Version }}
 before:
   hooks:
     - mkdir -p ./_artifacts/helm
@@ -19,11 +21,7 @@ before:
       --version {{ .Version }}
       --app-version {{ .Version }}
       --destination ./_artifacts/helm
-    # Render the clusterctl provider components manifest (into ./out) against
-    # the image published by the ko pipe below. IfNotPresent because release
-    # tags are immutable.
-    - >-
-      IMAGE_TAG={{ .Version }} make manifests
+    - make manifests
 
 # ko re-builds the binary itself using these settings (results are cached from
 # the build pipe). CGO is disabled so the image can run on the distroless base.
