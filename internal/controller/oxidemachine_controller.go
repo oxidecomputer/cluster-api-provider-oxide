@@ -389,7 +389,7 @@ func (r *OxideMachineReconciler) ensureInstanceDeleted(
 
 	// Instance deletion state machine:
 	// * If running, stop and requeue.
-	// * If stopped, destroy and requeue.
+	// * If stopped or failed, destroy and requeue.
 	// * Else log and requeue.
 	switch instance.RunState {
 	case oxide.InstanceStateRunning:
@@ -402,7 +402,7 @@ func (r *OxideMachineReconciler) ensureInstanceDeleted(
 			return false, instance, fmt.Errorf("stopping instance: %w", err)
 		}
 		return false, instance, nil
-	case oxide.InstanceStateStopped:
+	case oxide.InstanceStateStopped, oxide.InstanceStateFailed:
 		log.Info("destroying instance", "instance", instance.Id)
 		if err := oxideClient.InstanceDelete(ctx, oxide.InstanceDeleteParams{
 			Project:  oxide.NameOrId(projectName),
