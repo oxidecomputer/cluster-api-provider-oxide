@@ -47,7 +47,7 @@ builds:
 kos:
   - build: capox
     repositories:
-      - ghcr.io/oxidecomputer/cluster-api-provider-oxide
+      - ghcr.io/bwagner5/capox
     platforms:
       - linux/amd64
       - linux/arm64
