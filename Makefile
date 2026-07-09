@@ -300,6 +300,9 @@ ci-verify: precommit ## Verify fmt, linters, mod/sum files, etc. and fail if any
 # targets so they share one interface. Registry auth comes from the environment
 # (`docker login ghcr.io`); in GitHub Actions that is handled by the release
 # workflow. GoReleaser also needs GITHUB_TOKEN to create the GitHub release.
+# The helm charts (packaged into _artifacts/helm by goreleaser's before hooks)
+# are pushed here rather than by a goreleaser publisher, because publishers run
+# against every release extra file (metadata.yaml et al), not just the charts.
 
 .PHONY: release-check
 release-check:
@@ -310,6 +313,9 @@ release-snapshot: ## Build the release artifacts locally without publishing (ima
 	$(GORELEASER) release --snapshot --clean
 
 .PHONY: release
-release: ## Build and push the multi-arch (linux/amd64,linux/arm64) images to ghcr and cut a GitHub release.
+release: ## Build and push the multi-arch (linux/amd64,linux/arm64) images to ghcr, push the helm charts, and cut a GitHub release.
 	$(GORELEASER) release --clean
+	for chart in $(ARTIFACTS)/helm/*.tgz; do \
+		helm push "$$chart" "oci://$(HELM_OCI_REPO)"; \
+	done
 	
