@@ -35,3 +35,6 @@ _artifacts/
 # Release artifacts (GoReleaser / build-installer output)
 dist/
 out/
+
+# Generated K8s manifest from the helm chart
+tests/e2e/data/capox/capox.yaml

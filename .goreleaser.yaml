@@ -8,24 +8,29 @@ version: 2
 
 before:
   hooks:
-    - mkdir -p ./out/helm
+    - mkdir -p ./_artifacts/helm
     - >-
       helm package ./charts/cluster-api-provider-oxide
       --version {{ .Version }}
       --app-version {{ .Version }}
-      --destination ./out/helm
+      --destination ./_artifacts/helm
     - >-
       helm package ./charts/cluster-api-provider-oxide-crds
       --version {{ .Version }}
       --app-version {{ .Version }}
-      --destination ./out/helm
+      --destination ./_artifacts/helm
+    # Render the clusterctl provider components manifest (into ./out) against
+    # the image published by the ko pipe below. IfNotPresent because release
+    # tags are immutable.
+    - >-
+      IMAGE_TAG={{ .Version }} make manifests
 
 # ko re-builds the binary itself using these settings (results are cached from
 # the build pipe). CGO is disabled so the image can run on the distroless base.
 builds:
-  - id: manager
+  - id: capox
     main: ./cmd
-    binary: manager
+    binary: capox
     env:
       - CGO_ENABLED=0
     flags:
@@ -40,14 +45,14 @@ builds:
 # (docker login to ghcr.io); the base image defaults to the distroless,
 # nonroot cgr.dev/chainguard/static.
 kos:
-  - build: manager
+  - build: capox
     repositories:
       - ghcr.io/oxidecomputer/cluster-api-provider-oxide
     platforms:
       - linux/amd64
       - linux/arm64
     tags:
-      - "{{ .Tag }}"
+      - "{{ .Version }}"
       - latest
     # Push to the bare repo (no import-path or MD5 suffix).
     bare: true
@@ -59,14 +64,25 @@ kos:
 checksum:
   name_template: "checksums.txt"
   extra_files:
-    - glob: ./out/helm/*.tgz
+    - glob: ./_artifacts/helm/*.tgz
+    - glob: ./_artifacts/infrastructure-components.yaml
+    - glob: ./metadata.yaml
+
+# Attach the clusterctl provider artifacts to the GitHub release so
+# `clusterctl init --infrastructure oxide` can discover and install the
+# provider. metadata.yaml maps release versions to CAPI contract versions and
+# must accompany the components manifest.
+release:
+  extra_files:
+    - glob: ./_artifacts/infrastructure-components.yaml
+    - glob: ./metadata.yaml
 
 publishers:
   - name: helm-oci
     ids:
       - helm-only
     extra_files:
-      - glob: ./out/helm/*.tgz
+      - glob: ./_artifacts/helm/*.tgz
     cmd: helm push "{{ abs .ArtifactPath }}" "oci://{{ .Env.HELM_OCI_REPO }}"
     env:
       - HELM_OCI_REPO={{ .Env.HELM_OCI_REPO }}

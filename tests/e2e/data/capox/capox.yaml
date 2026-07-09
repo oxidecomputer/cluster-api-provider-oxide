@@ -1,7 +1,7 @@
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: oxide-system
+  name: capox-system
 ---
 ---
 # Source: cluster-api-provider-oxide/crds/infrastructure.cluster.x-k8s.io_oxideclusters.yaml
@@ -11,6 +11,9 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.21.0
+  labels:
+    cluster.x-k8s.io/v1beta1: v1alpha1
+    cluster.x-k8s.io/v1beta2: v1alpha1
   name: oxideclusters.infrastructure.cluster.x-k8s.io
 spec:
   group: infrastructure.cluster.x-k8s.io
@@ -214,6 +217,9 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.21.0
+  labels:
+    cluster.x-k8s.io/v1beta1: v1alpha1
+    cluster.x-k8s.io/v1beta2: v1alpha1
   name: oxidemachines.infrastructure.cluster.x-k8s.io
 spec:
   group: infrastructure.cluster.x-k8s.io
@@ -471,6 +477,9 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.21.0
+  labels:
+    cluster.x-k8s.io/v1beta1: v1alpha1
+    cluster.x-k8s.io/v1beta2: v1alpha1
   name: oxidemachinetemplates.infrastructure.cluster.x-k8s.io
 spec:
   group: infrastructure.cluster.x-k8s.io
@@ -662,6 +671,7 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: cluster-api-provider-oxide
+  namespace: capox-system
   labels:
     helm.sh/chart: cluster-api-provider-oxide-0.0.1
     app.kubernetes.io/name: cluster-api-provider-oxide
@@ -755,7 +765,7 @@ roleRef:
 subjects:
 - kind: ServiceAccount
   name: cluster-api-provider-oxide
-  namespace: oxide-system
+  namespace: capox-system
 
 ---
 # Source: cluster-api-provider-oxide/templates/role.yaml
@@ -763,6 +773,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: cluster-api-provider-oxide
+  namespace: capox-system
   labels:
     helm.sh/chart: cluster-api-provider-oxide-0.0.1
     app.kubernetes.io/name: cluster-api-provider-oxide
@@ -807,6 +818,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: cluster-api-provider-oxide
+  namespace: capox-system
   labels:
     helm.sh/chart: cluster-api-provider-oxide-0.0.1
     app.kubernetes.io/name: cluster-api-provider-oxide
@@ -820,13 +832,14 @@ roleRef:
 subjects:
 - kind: ServiceAccount
   name: cluster-api-provider-oxide
-  namespace: oxide-system
+  namespace: capox-system
 ---
 # Source: cluster-api-provider-oxide/templates/deployment.yaml
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: cluster-api-provider-oxide
+  namespace: capox-system
   labels:
     helm.sh/chart: cluster-api-provider-oxide-0.0.1
     app.kubernetes.io/name: cluster-api-provider-oxide
@@ -865,7 +878,7 @@ spec:
               - ALL
             readOnlyRootFilesystem: true
             runAsNonRoot: true
-          image: "ghcr.io/oxidecomputer/cluster-api-provider-oxide:dev"
+          image: "kind.local/cluster-api-provider-oxide:2e4aac76fa4e99e76ebe4f181db143c33ba5870cd84a6efe4fccbba489ced097"
           imagePullPolicy: IfNotPresent
           livenessProbe:
             httpGet:

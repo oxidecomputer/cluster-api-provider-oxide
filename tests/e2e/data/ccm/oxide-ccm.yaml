@@ -6,10 +6,10 @@ metadata:
   name: ccm-oxide-cloud-controller-manager
   namespace: kube-system
   labels:
-    helm.sh/chart: oxide-cloud-controller-manager-0.7.0
+    helm.sh/chart: oxide-cloud-controller-manager-0.7.1
     app.kubernetes.io/name: oxide-cloud-controller-manager
     app.kubernetes.io/instance: ccm
-    app.kubernetes.io/version: "0.7.0"
+    app.kubernetes.io/version: "0.7.1"
     app.kubernetes.io/managed-by: Helm
 
 ---
@@ -19,10 +19,10 @@ kind: ClusterRole
 metadata:
   name: system:ccm-oxide-cloud-controller-manager
   labels:
-    helm.sh/chart: oxide-cloud-controller-manager-0.7.0
+    helm.sh/chart: oxide-cloud-controller-manager-0.7.1
     app.kubernetes.io/name: oxide-cloud-controller-manager
     app.kubernetes.io/instance: ccm
-    app.kubernetes.io/version: "0.7.0"
+    app.kubernetes.io/version: "0.7.1"
     app.kubernetes.io/managed-by: Helm
   annotations:
     rbac.authorization.kubernetes.io/autoupdate: "true"
@@ -117,10 +117,10 @@ kind: ClusterRoleBinding
 metadata:
   name: system:ccm-oxide-cloud-controller-manager
   labels:
-    helm.sh/chart: oxide-cloud-controller-manager-0.7.0
+    helm.sh/chart: oxide-cloud-controller-manager-0.7.1
     app.kubernetes.io/name: oxide-cloud-controller-manager
     app.kubernetes.io/instance: ccm
-    app.kubernetes.io/version: "0.7.0"
+    app.kubernetes.io/version: "0.7.1"
     app.kubernetes.io/managed-by: Helm
 roleRef:
   apiGroup: rbac.authorization.k8s.io
@@ -139,10 +139,10 @@ metadata:
   name: ccm-oxide-cloud-controller-manager
   namespace: kube-system
   labels:
-    helm.sh/chart: oxide-cloud-controller-manager-0.7.0
+    helm.sh/chart: oxide-cloud-controller-manager-0.7.1
     app.kubernetes.io/name: oxide-cloud-controller-manager
     app.kubernetes.io/instance: ccm
-    app.kubernetes.io/version: "0.7.0"
+    app.kubernetes.io/version: "0.7.1"
     app.kubernetes.io/managed-by: Helm
 spec:
   replicas: 1
@@ -163,17 +163,20 @@ spec:
       tolerations:
         - key: "node.cloudprovider.kubernetes.io/uninitialized"
           value: "true"
-          effect: "NoSchedule"
-        - key: "CriticalAddonsOnly"
-          operator: "Exists"
+          effect: NoSchedule
         - key: "node-role.kubernetes.io/control-plane"
           effect: NoSchedule
-        - key: node.kubernetes.io/not-ready
+        - key: "node-role.kubernetes.io/etcd"
           operator: Exists
-          effect: "NoSchedule"
+          effect: NoExecute
+        - key: "node.kubernetes.io/not-ready"
+          operator: Exists
+          effect: NoSchedule
+        - key: CriticalAddonsOnly
+          operator: Exists
       containers:
       - name: oxide-cloud-controller-manager
-        image: "ghcr.io/oxidecomputer/oxide-cloud-controller-manager:0.7.0"
+        image: "ghcr.io/oxidecomputer/oxide-cloud-controller-manager:0.7.1"
         imagePullPolicy: IfNotPresent
         command:
           - "/usr/bin/oxide-cloud-controller-manager"

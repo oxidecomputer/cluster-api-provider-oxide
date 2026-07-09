@@ -2,6 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: {{ include "cluster-api-provider-oxide.name" . }}
+  namespace: {{ .Release.Namespace }}
   labels:
     {{- include "cluster-api-provider-oxide.labels" . | nindent 4 }}
 spec:

@@ -1,15 +1,11 @@
-images:
-- name: ghcr.io/oxidecomputer/cluster-api-provider-oxide:dev
-  loadBehavior: mustLoad
-
 variables:
-  KUBERNETES_VERSION: "v1.34.3"
+  KUBERNETES_VERSION: "v1.36.1"
   CONTROL_PLANE_MACHINE_COUNT: "1"
   WORKER_MACHINE_COUNT: "0"
-  OXIDE_PROJECT: "carp"
+  OXIDE_PROJECT: "cluster-api-provider-oxide"
   OXIDE_VPC: "default"
   OXIDE_SUBNET: "default"
-  OXIDE_IMAGE_ID: "4b2725ec-4285-4fd4-ba04-de714c55fcfc"
+  OXIDE_IMAGE_ID: "dc2a71b6-4a5a-4325-8b30-eba975108aa2"
   CNI: "./data/cni/calico.yaml"
   CCM: "./data/ccm/oxide-ccm.yaml"
   CCM_SECRET: "./data/ccm/oxide-ccm-secret.yaml"
@@ -53,7 +49,7 @@ providers:
     type: url
     contract: v1beta2
     files:
-    - sourcePath: "../data/shared/oxide/metadata.yaml"
+    - sourcePath: "../../../metadata.yaml"
     - sourcePath: "../data/infrastructure-oxide/cluster-template.yaml"
 
 intervals:
