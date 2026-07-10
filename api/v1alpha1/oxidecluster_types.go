@@ -150,5 +150,5 @@ type OxideClusterList struct {
 }
 
 func init() {
-	SchemeBuilder.Register(&OxideCluster{}, &OxideClusterList{})
+	objectTypes = append(objectTypes, &OxideCluster{}, &OxideClusterList{})
 }

@@ -164,5 +164,5 @@ type OxideMachineList struct {
 }
 
 func init() {
-	SchemeBuilder.Register(&OxideMachine{}, &OxideMachineList{})
+	objectTypes = append(objectTypes, &OxideMachine{}, &OxideMachineList{})
 }
