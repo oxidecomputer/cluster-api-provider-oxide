@@ -88,7 +88,6 @@ Now, install Cluster API Provider for Oxide:
 helm upgrade --install \
     --namespace capox-system \
     --create-namespace \
-    --version 0.0.12  \
     --wait \
     capox \
     oci://ghcr.io/oxidecomputer/cluster-api-provider-oxide/helm-charts/cluster-api-provider-oxide
