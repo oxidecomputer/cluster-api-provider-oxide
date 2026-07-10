@@ -36,6 +36,9 @@ jobs:
           restore-keys: |
             tools-release-${{ runner.os }}-
 
+      - name: Test
+        run: make ci-verify
+
       # ko (run by GoReleaser) authenticates to the registry via the Docker
       # config this writes; GITHUB_TOKEN carries packages:write from above.
       - name: Log in to GitHub Container Registry
