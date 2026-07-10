@@ -1,5 +1,5 @@
 # Image URL to use all building/pushing image targets
-IMAGE_REPO ?= ghcr.io/bwagner5/capox
+IMAGE_REPO ?= ghcr.io/oxidecomputer/cluster-api-provider-oxide
 HELM_OCI_REPO ?= $(IMAGE_REPO)/helm-charts
 IMAGE_TAG ?= dev
 IMG ?= $(IMAGE_REPO):$(IMAGE_TAG)
@@ -9,6 +9,7 @@ MAKEFILE_PATH := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 TOOLS_MOD := $(MAKEFILE_PATH)/tools/go.mod
 GO_TOOL := go tool -modfile=$(TOOLS_MOD)
 NAMESPACE ?= capox-system
+HELM_VERSION ?= v4.2.2
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
@@ -57,6 +58,7 @@ generate: ## Generate code and CRDs w/ controllergen
 		output:rbac:artifacts:config=charts/cluster-api-provider-oxide/generated
 	mv charts/cluster-api-provider-oxide/generated/role.yaml \
 		charts/cluster-api-provider-oxide/generated/clusterrole.yaml
+	$(HELM_DOCS) --chart-search-root charts/cluster-api-provider-oxide
 
 .PHONY: verify
 verify: release-check ## Run linters and vetting on codebase with no commit checks and no mutations.
@@ -119,7 +121,7 @@ CCM_VERSION ?=
 .PHONY: render-e2e-ccm
 render-e2e-ccm:
 	@mkdir -p tests/e2e/data/ccm
-	helm template $(CCM_RELEASE) \
+	$(HELM) template $(CCM_RELEASE) \
 	  oci://ghcr.io/oxidecomputer/helm-charts/oxide-cloud-controller-manager \
 	  $(if $(CCM_VERSION),--version $(CCM_VERSION),) \
 	  --namespace kube-system \
@@ -136,7 +138,7 @@ render-e2e-capox: generate build-kind
 	# Render the exact image ref build-kind captured, so the e2e deployment uses
 	# the image just built and loaded into kind.
 	REF="$$(cat $(IMAGE_REF_FILE))"; \
-	helm template capox charts/cluster-api-provider-oxide \
+	$(HELM) template capox charts/cluster-api-provider-oxide \
 		--namespace $(NAMESPACE) \
 		--include-crds \
 		--set image.repository="$${REF%:*}" \
@@ -154,16 +156,18 @@ export PATH := $(LOCALBIN):$(PATH)
 
 ## Tool Binaries
 CONTROLLER_GEN ?= $(GO_TOOL) controller-gen
-KUBECTL ?= kubectl
+KUBECTL ?= $(LOCALBIN)/kubectl
 KIND ?= $(GO_TOOL) kind
 KO ?= KO_CACHE=$(KO_CACHE) $(GO_TOOL) ko
 KUSTOMIZE ?= $(GO_TOOL) kustomize
 GORELEASER ?= $(GO_TOOL) goreleaser
 ENVTEST ?= go tool setup-envtest # this tool is in the main go.mod so the version stays in-sync
 GOLANGCI_LINT ?= $(LOCALBIN)/golangci-lint-custom
+HELM ?= $(LOCALBIN)/helm
+HELM_DOCS ?= $(GO_TOOL) helm-docs
 
 .PHONY: tools
-tools: kubectl $(LOCALBIN) setup-envtest golangci-lint ## Install all required dev tools to the repo's local bin/
+tools: kubectl helm $(LOCALBIN) setup-envtest golangci-lint ## Install all required dev tools to the repo's local bin/
 	GOBIN="$(LOCALBIN)" go install -modfile=$(TOOLS_MOD) tool
 
 .PHONY: kubectl
@@ -172,6 +176,12 @@ kubectl: $(LOCALBIN)
 		v=$$(curl -fsSL "https://dl.k8s.io/release/stable-$(ENVTEST_K8S_VERSION).txt"); \
 		curl -fsSL -o "$(LOCALBIN)/kubectl" "https://dl.k8s.io/release/$$v/bin/$$(go env GOOS)/$$(go env GOARCH)/kubectl"; \
 		chmod +x "$(LOCALBIN)/kubectl"
+
+.PHONY: helm
+helm: $(LOCALBIN)
+	curl -fsSL -o $(LOCALBIN)/get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-4
+	chmod 700 $(LOCALBIN)/get_helm.sh
+	HELM_INSTALL_DIR=$(LOCALBIN) USE_SUDO=false $(LOCALBIN)/get_helm.sh --version $(HELM_VERSION)
 
 #ENVTEST_K8S_VERSION is the version of Kubernetes to use for setting up ENVTEST binaries (i.e. 1.31)
 ENVTEST_K8S_VERSION ?= $(shell v='$(call gomodver,k8s.io/api)'; \
@@ -226,7 +236,7 @@ manifests: generate
 # helm-specific labels the chart renders (helm.sh/chart, managed-by: Helm);
 # nothing in this manifest is managed by a helm release.
 	printf 'apiVersion: v1\nkind: Namespace\nmetadata:\n  name: $(NAMESPACE)\n---\n' > $(ARTIFACTS)/infrastructure-components.yaml
-	helm template capox charts/cluster-api-provider-oxide \
+	$(HELM) template capox charts/cluster-api-provider-oxide \
 		--namespace $(NAMESPACE) \
 		--include-crds \
 		--set image.repository=$(IMAGE_REPO) \
@@ -239,15 +249,15 @@ manifests: generate
 
 .PHONY: install-crds
 install-crds: generate ## Install CRDs into the K8s cluster specified in ~/.kube/config.
-	helm upgrade --install capox-crds-dev charts/cluster-api-provider-oxide-crds
+	$(HELM) upgrade --install capox-crds-dev charts/cluster-api-provider-oxide-crds
 
 .PHONY: uninstall-crds
 uninstall-crds: ## Uninstall CRDs from the K8s cluster specified in ~/.kube/config.
-	helm uninstall capox-crds-dev charts/cluster-api-provider-oxide-crds
+	$(HELM) uninstall capox-crds-dev charts/cluster-api-provider-oxide-crds
 
 .PHONY: deploy
 deploy: generate ## Deploy controller to the K8s cluster specified in ~/.kube/config. This pulls a remote image, but uses the local helm chart.
-	helm upgrade --install capox-dev charts/cluster-api-provider-oxide \
+	$(HELM) upgrade --install capox-dev charts/cluster-api-provider-oxide \
 		--create-namespace \
 		--namespace $(NAMESPACE) \
 		--set image.repository=$(IMAGE_REPO) \
@@ -263,7 +273,7 @@ deploy: generate ## Deploy controller to the K8s cluster specified in ~/.kube/co
 .PHONY: helm-apply
 helm-apply:
 	REF="$$(cat $(IMAGE_REF_FILE))"; \
-	helm upgrade --install capox-dev charts/cluster-api-provider-oxide \
+	$(HELM) upgrade --install capox-dev charts/cluster-api-provider-oxide \
 		--create-namespace \
 		--namespace $(NAMESPACE) \
 		--set image.repository="$${REF%:*}" \
@@ -278,7 +288,7 @@ deploy-kind: build-kind helm-apply ## Build the image, load it into KinD, and de
 
 .PHONY: undeploy
 undeploy: ## Undeploy controller from the K8s cluster specified in ~/.kube/config.
-	helm uninstall capox-dev --namespace $(NAMESPACE) --wait
+	$(HELM) uninstall capox-dev --namespace $(NAMESPACE) --wait
 
 define gomodver
 $(shell go list -m -f '{{if .Replace}}{{.Replace.Version}}{{else}}{{.Version}}{{end}}' $(1) 2>/dev/null)
@@ -305,17 +315,17 @@ ci-verify: precommit ## Verify fmt, linters, mod/sum files, etc. and fail if any
 # against every release extra file (metadata.yaml et al), not just the charts.
 
 .PHONY: release-check
-release-check:
+release-check: tools
 	$(GORELEASER) check
 
 .PHONY: release-snapshot
-release-snapshot: ## Build the release artifacts locally without publishing (images go to a local registry).
+release-snapshot: tools ## Build the release artifacts locally without publishing (images go to a local registry).
 	$(GORELEASER) release --snapshot --clean
 
 .PHONY: release
-release: ## Build and push the multi-arch (linux/amd64,linux/arm64) images to ghcr, push the helm charts, and cut a GitHub release.
+release: tools ## Build and push the multi-arch (linux/amd64,linux/arm64) images to ghcr, push the helm charts, and cut a GitHub release.
 	$(GORELEASER) release --clean
 	for chart in $(ARTIFACTS)/helm/*.tgz; do \
-		helm push "$$chart" "oci://$(HELM_OCI_REPO)"; \
+		$(HELM) push "$$chart" "oci://$(HELM_OCI_REPO)"; \
 	done
 	

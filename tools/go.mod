@@ -6,6 +6,7 @@ tool (
 	github.com/golangci/golangci-lint/v2/cmd/golangci-lint
 	github.com/google/ko
 	github.com/goreleaser/goreleaser/v2
+	github.com/norwoodj/helm-docs/cmd/helm-docs
 	go.uber.org/mock/mockgen
 	sigs.k8s.io/controller-tools/cmd/controller-gen
 	sigs.k8s.io/kind
@@ -373,6 +374,7 @@ require (
 	github.com/nakabonne/nestif v0.3.1 // indirect
 	github.com/nishanths/exhaustive v0.12.0 // indirect
 	github.com/nishanths/predeclared v0.2.2 // indirect
+	github.com/norwoodj/helm-docs v1.14.2 // indirect
 	github.com/nunnatsa/ginkgolinter v0.23.0 // indirect
 	github.com/oklog/ulid/v2 v2.1.1 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
@@ -514,6 +516,7 @@ require (
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
+	helm.sh/helm/v3 v3.15.2 // indirect
 	honnef.co/go/tools v0.7.0 // indirect
 	k8s.io/api v0.36.0 // indirect
 	k8s.io/apiextensions-apiserver v0.36.0 // indirect
