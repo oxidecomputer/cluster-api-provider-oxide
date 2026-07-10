@@ -17,6 +17,51 @@ Check out the broader [Cluster API docs](https://cluster-api.sigs.k8s.io/introdu
 
 If you're ready to dive-in and create some clusters on an Oxide rack, then follow the [CAPOx Getting Started Guide](docs/getting-started.md).
 
+## Contributing
+
+### Tooling
+
+Run the following to download tools required for development: 
+
+```
+make tools
+```
+
+### Testing
+
+To test code changes, you can use [KinD](https://kind.sigs.k8s.io/) locally as the management cluster. There are make recipes to build and deploy the controller to the local KinD cluster or a remote cluster. 
+
+To see available recipes, check the makefile's help recipe under the "Dev Deployment" category:
+
+```
+make help
+```
+
+### Before Opening a PR
+
+Make sure to run the following recipe to ensure all local tests and linting passes:
+
+```
+make precommit
+```
+
+The `precommit` recipe does NOT run e2e tests, so you will need to execute those separately. 
+The e2e tests require that `OXIDE_HOST` and `OXIDE_TOKEN` env variables are set. 
+Default values for other test configuration can be found [here](tests/e2e/config/oxide.yaml).
+
+```
+make test-e2e
+```
+
+## Release
+
+Tag the commit you are releasing with the semver release version (i.e. v1.0.9). A github actions workflow will kick-off that will perform the release using [goreleaser](https://goreleaser.com). 
+
+```
+git tag vX.Y.Z
+git push origin vX.Y.Z
+```
+
 
 ## License
 

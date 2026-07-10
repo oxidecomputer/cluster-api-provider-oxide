@@ -90,9 +90,8 @@ helm upgrade --install \
     --create-namespace \
     --version 0.0.12  \
     --wait \
-    --set image.repository=ghcr.io/bwagner5/capox/cluster-api-provider-oxide \
     capox \
-    oci://ghcr.io/bwagner5/capox/helm-charts/cluster-api-provider-oxide
+    oci://ghcr.io/oxidecomputer/cluster-api-provider-oxide/helm-charts/cluster-api-provider-oxide
 ```
 
 
