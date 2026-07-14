@@ -13,6 +13,11 @@ jobs:
     steps:
       - name: Clone the code
         uses: actions/checkout@v7
+        with:
+          # ci-verify runs release-snapshot, which needs tags: goreleaser
+          # derives the snapshot version and hack/gen-capi-metadata.sh derives
+          # the release series from them.
+          fetch-depth: 0
 
       - name: Setup Go
         uses: actions/setup-go@v6
