@@ -1,0 +1,11 @@
+# Static clusterctl metadata fixture for the e2e tests, which install the
+# provider as the never-released placeholder version v0.0.0 (see
+# tests/e2e/config/oxide.yaml), so this file never needs updating. Real
+# releases generate their metadata.yaml from git tags via
+# hack/gen-capi-metadata.sh.
+apiVersion: clusterctl.cluster.x-k8s.io/v1alpha3
+kind: Metadata
+releaseSeries:
+  - major: 0
+    minor: 0
+    contract: v1beta2

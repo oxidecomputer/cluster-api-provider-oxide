@@ -10,6 +10,10 @@ TOOLS_MOD := $(MAKEFILE_PATH)/tools/go.mod
 GO_TOOL := go tool -modfile=$(TOOLS_MOD)
 NAMESPACE ?= capox-system
 HELM_VERSION ?= v4.2.2
+# CAPI contract version implemented by the provider; stamped on every release
+# series entry when hack/gen-capi-metadata.sh generates metadata.yaml. Bump it
+# (and add a series boundary in the script) when migrating to a new contract.
+CAPI_CONTRACT ?= v1beta2
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
@@ -320,10 +324,12 @@ release-check: tools
 
 .PHONY: release-snapshot
 release-snapshot: tools ## Build the release artifacts locally without publishing (images go to a local registry).
+	hack/gen-capi-metadata.sh --contract $(CAPI_CONTRACT) -o $(ARTIFACTS)/metadata.yaml
 	$(GORELEASER) release --snapshot --clean
 
 .PHONY: release
 release: tools ## Build and push the multi-arch (linux/amd64,linux/arm64) images to ghcr, push the helm charts, and cut a GitHub release.
+	hack/gen-capi-metadata.sh --contract $(CAPI_CONTRACT) -o $(ARTIFACTS)/metadata.yaml "$$(git describe --tags --exact-match)"
 	$(GORELEASER) release --clean
 	for chart in $(ARTIFACTS)/helm/*.tgz; do \
 		$(HELM) push "$$chart" "oci://$(HELM_OCI_REPO)"; \

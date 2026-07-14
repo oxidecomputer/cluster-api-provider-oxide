@@ -44,12 +44,15 @@ providers:
 - name: oxide
   type: InfrastructureProvider
   versions:
-  - name: v0.1.0
+  # v0.0.0 is a placeholder that will never be released, so the static
+  # metadata.yaml fixture below (covering only the 0.0 series) never needs
+  # updating as real releases are cut.
+  - name: v0.0.0
     value: ../data/capox/capox.yaml
     type: url
     contract: v1beta2
     files:
-    - sourcePath: "../../../metadata.yaml"
+    - sourcePath: "../data/infrastructure-oxide/metadata.yaml"
     - sourcePath: "../data/infrastructure-oxide/cluster-template.yaml"
 
 intervals:
