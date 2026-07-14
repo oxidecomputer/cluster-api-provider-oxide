@@ -324,7 +324,9 @@ release-check: tools
 
 .PHONY: release-snapshot
 release-snapshot: tools ## Build the release artifacts locally without publishing (images go to a local registry).
-	hack/gen-capi-metadata.sh --contract $(CAPI_CONTRACT) -o $(ARTIFACTS)/metadata.yaml
+	# The snapshot version exercises the script's <version> argument the same
+	# way a real release does.
+	hack/gen-capi-metadata.sh --contract $(CAPI_CONTRACT) -o $(ARTIFACTS)/metadata.yaml "$$(git describe --tags --abbrev=0)-SNAPSHOT"
 	$(GORELEASER) release --snapshot --clean
 
 .PHONY: release
