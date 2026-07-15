@@ -95,7 +95,7 @@ type OxideMachineStatus struct {
 	// NOTE: Fields in this struct are part of the Cluster API contract and are used to orchestrate
 	// initial Machine provisioning.
 	// +optional
-	Initialization OxideMachineInitializationStatus `json:"initialization,omitempty"`
+	Initialization OxideMachineInitializationStatus `json:"initialization,omitzero"`
 
 	// For Kubernetes API conventions, see:
 	// https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md#typical-status-properties
