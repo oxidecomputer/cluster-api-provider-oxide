@@ -95,7 +95,7 @@ type OxideClusterStatus struct {
 	// NOTE: Fields in this struct are part of the Cluster API contract and are used to orchestrate
 	// initial Cluster provisioning.
 	// +optional
-	Initialization OxideClusterInitializationStatus `json:"initialization,omitempty"`
+	Initialization OxideClusterInitializationStatus `json:"initialization,omitzero"`
 }
 
 // OxideClusterInitializationStatus provides observations of the OxideCluster initialization
