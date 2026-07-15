@@ -19,7 +19,7 @@ metadata:
   name: "${CLUSTER_NAME}"
 spec:
   credentialsRef:
-    name: "${OXIDE_SECRET:-oxide-credentials}"
+    name: "${OXIDE_SECRET:-cluster-api-provider-oxide}"
     namespace: "${OXIDE_SECRET_NAMESPACE:-default}"
   project: "${OXIDE_PROJECT}"
   vpc: "${OXIDE_VPC:-default}"
