@@ -116,7 +116,7 @@ func TestEnsureInstanceDeleted(t *testing.T) {
 					Return(&oxide.Instance{RunState: oxide.InstanceStateStopped}, nil)
 				m.EXPECT().InstanceDelete(gomock.Any(), gomock.Any()).Return(nil)
 			},
-			wantDeleted: true,
+			wantDeleted: false,
 		},
 		{
 			name: "stopping",

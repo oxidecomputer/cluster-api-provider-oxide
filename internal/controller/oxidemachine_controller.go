@@ -247,7 +247,8 @@ func (r *OxideMachineReconciler) Reconcile(
 		Status: metav1.ConditionTrue,
 		Reason: getReadyReason(instance),
 	})
-	if oxideMachine.Status.Initialization.Provisioned == nil || !*oxideMachine.Status.Initialization.Provisioned {
+	if oxideMachine.Status.Initialization.Provisioned == nil ||
+		!*oxideMachine.Status.Initialization.Provisioned {
 		log.Info("instance is running; marking as provisioned", "instance", instance.Name)
 	}
 	oxideMachine.Status.Initialization.Provisioned = new(true)
@@ -419,7 +420,8 @@ func (r *OxideMachineReconciler) ensureInstanceDeleted(
 			}
 			return false, instance, fmt.Errorf("deleting instance: %w", err)
 		}
-		// return false here since we need to wait for the instance to be deleted from the control plane or reach a terminal state
+		// return false here since we need to wait for the instance to be deleted from the control
+		// plane or reach a terminal state
 		return false, nil, nil
 	default:
 		log.Info(
