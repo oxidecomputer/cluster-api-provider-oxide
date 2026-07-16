@@ -55,6 +55,21 @@ func (mr *MockOxideClientMockRecorder) DiskDelete(arg0, arg1 any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DiskDelete", reflect.TypeOf((*MockOxideClient)(nil).DiskDelete), arg0, arg1)
 }
 
+// DiskView mocks base method.
+func (m *MockOxideClient) DiskView(arg0 context.Context, arg1 oxide.DiskViewParams) (*oxide.Disk, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DiskView", arg0, arg1)
+	ret0, _ := ret[0].(*oxide.Disk)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// DiskView indicates an expected call of DiskView.
+func (mr *MockOxideClientMockRecorder) DiskView(arg0, arg1 any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DiskView", reflect.TypeOf((*MockOxideClient)(nil).DiskView), arg0, arg1)
+}
+
 // FloatingIpAttach mocks base method.
 func (m *MockOxideClient) FloatingIpAttach(arg0 context.Context, arg1 oxide.FloatingIpAttachParams) (*oxide.FloatingIp, error) {
 	m.ctrl.T.Helper()

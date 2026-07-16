@@ -118,6 +118,13 @@ func (r *OxideClusterReconciler) Reconcile(
 		}
 		controllerutil.RemoveFinalizer(oxideCluster, infrav1.ClusterFinalizer)
 		return ctrl.Result{}, retErr
+	} else if !cluster.DeletionTimestamp.IsZero() {
+		log.Info(
+			"cluster is being deleted, aborting OxideCluster reconcile",
+			"cluster",
+			cluster.Name,
+		)
+		return ctrl.Result{}, nil
 	}
 
 	controllerutil.AddFinalizer(oxideCluster, infrav1.ClusterFinalizer)
@@ -203,17 +210,35 @@ func (r *OxideClusterReconciler) Reconcile(
 		// Attach the floating IP to the 0th provisioned instance.
 		for _, machine := range machines.Items {
 			if machine.Spec.ProviderID == "" {
+				log.Info(
+					"skipping floating IP attachment to machine due to missing providerID",
+					"machine",
+					machine.Name,
+				)
 				continue
 			}
 			provisioned := machine.Status.Initialization.Provisioned
 			if provisioned == nil || !*provisioned {
+				log.Info(
+					"skipping floating IP attachment to machine since it is not provisioned",
+					"machine",
+					machine.Name,
+				)
+				continue
+			}
+			if !machine.DeletionTimestamp.IsZero() {
+				log.Info(
+					"skipping floating IP attachment to machine since it is being deleted",
+					"machine",
+					machine.Name,
+				)
 				continue
 			}
 			instanceID, err := cloud.InstanceIDFromProviderID(machine.Spec.ProviderID)
 			if err != nil {
 				return ctrl.Result{}, fmt.Errorf("parsing provider id: %w", err)
 			}
-			log.Info("attaching floating ip", "ip", ip.Ip, "instance", instanceID)
+			log.Info("attaching floating IP", "ip", ip.Ip, "instance", instanceID)
 			ip, err = oxideClient.FloatingIpAttach(ctx, oxide.FloatingIpAttachParams{
 				FloatingIp: oxide.NameOrId(ip.Id),
 				Body: &oxide.FloatingIpAttach{

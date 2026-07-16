@@ -116,6 +116,7 @@ func TestEnsureInstanceDeleted(t *testing.T) {
 					Return(&oxide.Instance{RunState: oxide.InstanceStateStopped}, nil)
 				m.EXPECT().InstanceDelete(gomock.Any(), gomock.Any()).Return(nil)
 			},
+			wantDeleted: false,
 		},
 		{
 			name: "stopping",
@@ -143,6 +144,100 @@ func TestEnsureInstanceDeleted(t *testing.T) {
 				oxideClient,
 				"project",
 				"instance",
+			)
+			assert.Equal(t, tc.wantDeleted, gotDeleted)
+			if tc.wantErr != "" {
+				assert.ErrorContains(t, gotErr, tc.wantErr)
+			} else {
+				assert.NoError(t, gotErr)
+			}
+		})
+	}
+}
+
+func TestEnsureDiskDeleted(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		setup       func(*mock.MockOxideClient)
+		wantDeleted bool
+		wantErr     string
+	}{
+		{
+			name: "gone",
+			setup: func(m *mock.MockOxideClient) {
+				m.EXPECT().DiskView(gomock.Any(), gomock.Any()).Return(nil, httpErr("ObjectNotFound"))
+			},
+			wantDeleted: true,
+		},
+		{
+			name: "detached",
+			setup: func(m *mock.MockOxideClient) {
+				m.EXPECT().DiskView(gomock.Any(), gomock.Any()).
+					Return(&oxide.Disk{State: oxide.DiskState{Value: oxide.DiskStateDetached{}}}, nil)
+				m.EXPECT().DiskDelete(gomock.Any(), gomock.Any()).Return(nil)
+			},
+			wantDeleted: true,
+		},
+		{
+			name: "faulted",
+			setup: func(m *mock.MockOxideClient) {
+				m.EXPECT().DiskView(gomock.Any(), gomock.Any()).
+					Return(&oxide.Disk{State: oxide.DiskState{Value: oxide.DiskStateFaulted{}}}, nil)
+				m.EXPECT().DiskDelete(gomock.Any(), gomock.Any()).Return(nil)
+			},
+			wantDeleted: true,
+		},
+		{
+			name: "attached",
+			setup: func(m *mock.MockOxideClient) {
+				m.EXPECT().DiskView(gomock.Any(), gomock.Any()).
+					Return(&oxide.Disk{State: oxide.DiskState{Value: oxide.DiskStateAttached{}}}, nil)
+			},
+		},
+		{
+			name: "detaching",
+			setup: func(m *mock.MockOxideClient) {
+				m.EXPECT().DiskView(gomock.Any(), gomock.Any()).
+					Return(&oxide.Disk{State: oxide.DiskState{Value: oxide.DiskStateDetaching{}}}, nil)
+			},
+		},
+		{
+			name: "deleted between view and delete",
+			setup: func(m *mock.MockOxideClient) {
+				m.EXPECT().DiskView(gomock.Any(), gomock.Any()).
+					Return(&oxide.Disk{State: oxide.DiskState{Value: oxide.DiskStateDetached{}}}, nil)
+				m.EXPECT().DiskDelete(gomock.Any(), gomock.Any()).Return(httpErr("ObjectNotFound"))
+			},
+			wantDeleted: true,
+		},
+		{
+			name: "view error",
+			setup: func(m *mock.MockOxideClient) {
+				m.EXPECT().DiskView(gomock.Any(), gomock.Any()).Return(nil, httpErr("InternalError"))
+			},
+			wantErr: "viewing disk",
+		},
+		{
+			name: "delete error",
+			setup: func(m *mock.MockOxideClient) {
+				m.EXPECT().DiskView(gomock.Any(), gomock.Any()).
+					Return(&oxide.Disk{State: oxide.DiskState{Value: oxide.DiskStateDetached{}}}, nil)
+				m.EXPECT().DiskDelete(gomock.Any(), gomock.Any()).Return(httpErr("InternalError"))
+			},
+			wantErr: "destroying disk",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			oxideClient := mock.NewMockOxideClient(ctrl)
+			tc.setup(oxideClient)
+
+			r := OxideMachineReconciler{}
+			gotDeleted, gotErr := r.ensureDiskDeleted(
+				context.Background(),
+				oxideClient,
+				"project",
+				"disk",
 			)
 			assert.Equal(t, tc.wantDeleted, gotDeleted)
 			if tc.wantErr != "" {
