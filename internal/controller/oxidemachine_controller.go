@@ -247,6 +247,9 @@ func (r *OxideMachineReconciler) Reconcile(
 		Status: metav1.ConditionTrue,
 		Reason: getReadyReason(instance),
 	})
+	if oxideMachine.Status.Initialization.Provisioned == nil || !*oxideMachine.Status.Initialization.Provisioned {
+		log.Info("instance is running; marking as provisioned", "instance", instance.Name)
+	}
 	oxideMachine.Status.Initialization.Provisioned = new(true)
 
 	// Look up instance addresses if not already known. As of this writing, the controller isn't
@@ -311,7 +314,6 @@ func (r *OxideMachineReconciler) ensureInstanceRunning(
 		log.Info("waiting for instance to start", "state", instance.RunState)
 		return false, instance, nil
 	case oxide.InstanceStateRunning:
-		log.Info("instance is running; marking as provisioned", "instance", instance.Name)
 		return true, instance, nil
 	default:
 		log.Info("waiting for instance", "instance", instance.Id, "state", instance.RunState)
@@ -329,8 +331,6 @@ func (r *OxideMachineReconciler) handleDelete(
 	instanceName string,
 	diskName string,
 ) (ctrl.Result, error) {
-	log := logf.FromContext(ctx)
-
 	instanceDeleted, instance, err := r.ensureInstanceDeleted(
 		ctx,
 		oxideClient,
@@ -353,14 +353,17 @@ func (r *OxideMachineReconciler) handleDelete(
 	// assume the disk isn't attached. If the disk was attached to another instance out of band, or
 	// is otherwise in an unexpected state, the reconciler isn't responsible for detaching it, and
 	// returns an error.
-	log.Info("deleting disk", "disk", diskName)
-	if err := oxideClient.DiskDelete(ctx, oxide.DiskDeleteParams{
-		Project: oxide.NameOrId(projectName),
-		Disk:    oxide.NameOrId(diskName),
-	}); err != nil {
-		if !errors.Is(err, oxide.ErrObjectNotFound) {
-			return ctrl.Result{}, fmt.Errorf("deleting disk: %w", err)
-		}
+	diskDeleted, err := r.ensureDiskDeleted(
+		ctx,
+		oxideClient,
+		projectName,
+		diskName,
+	)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("ensuring disk deleted: %w", err)
+	}
+	if !diskDeleted {
+		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 	}
 
 	controllerutil.RemoveFinalizer(oxideMachine, infrav1.MachineFinalizer)
@@ -399,6 +402,9 @@ func (r *OxideMachineReconciler) ensureInstanceDeleted(
 			Instance: oxide.NameOrId(instanceName),
 		})
 		if err != nil {
+			if errors.Is(err, oxide.ErrObjectNotFound) {
+				return true, nil, nil
+			}
 			return false, instance, fmt.Errorf("stopping instance: %w", err)
 		}
 		return false, instance, nil
@@ -408,8 +414,12 @@ func (r *OxideMachineReconciler) ensureInstanceDeleted(
 			Project:  oxide.NameOrId(projectName),
 			Instance: oxide.NameOrId(instanceName),
 		}); err != nil {
+			if errors.Is(err, oxide.ErrObjectNotFound) {
+				return true, nil, nil
+			}
 			return false, instance, fmt.Errorf("deleting instance: %w", err)
 		}
+		// return false here since we need to wait for the instance to be deleted from the control plane or reach a terminal state
 		return false, nil, nil
 	default:
 		log.Info(
@@ -420,6 +430,56 @@ func (r *OxideMachineReconciler) ensureInstanceDeleted(
 			instance.RunState,
 		)
 		return false, instance, nil
+	}
+}
+
+func (r *OxideMachineReconciler) ensureDiskDeleted(
+	ctx context.Context,
+	oxideClient cloud.OxideClient,
+	projectName string,
+	diskName string,
+) (bool, error) {
+	log := logf.FromContext(ctx)
+
+	// View the disk. If it doesn't exist, we're done.
+	disk, err := oxideClient.DiskView(ctx, oxide.DiskViewParams{
+		Project: oxide.NameOrId(projectName),
+		Disk:    oxide.NameOrId(diskName),
+	})
+	if err != nil {
+		if errors.Is(err, oxide.ErrObjectNotFound) {
+			return true, nil
+		}
+		return false, fmt.Errorf("viewing disk: %w", err)
+	}
+
+	// Disk deletion state machine:
+	// * If detached, delete
+	// * Else log and requeue.
+	switch disk.State.State() {
+	case oxide.DiskStateStateDetached, oxide.DiskStateStateFaulted:
+		log.Info("destroying disk", "disk", disk.Id)
+		err := oxideClient.DiskDelete(ctx, oxide.DiskDeleteParams{
+			Project: oxide.NameOrId(projectName),
+			Disk:    oxide.NameOrId(diskName),
+		})
+		if err != nil {
+			if errors.Is(err, oxide.ErrObjectNotFound) {
+				return true, nil
+			}
+			return false, fmt.Errorf("destroying disk: %w", err)
+		}
+		log.Info("destroyed disk", "disk", disk.Id)
+		return true, nil
+	default:
+		log.Info(
+			"waiting for disk; requeueing",
+			"disk",
+			disk.Id,
+			"state",
+			disk.State.State(),
+		)
+		return false, nil
 	}
 }
 
