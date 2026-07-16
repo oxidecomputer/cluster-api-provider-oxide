@@ -3,6 +3,7 @@ package cloud
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -37,6 +38,7 @@ type OxideClient interface {
 		oxide.InstanceExternalIpListParams,
 	) (*oxide.ExternalIpResultsPage, error)
 
+	DiskView(context.Context, oxide.DiskViewParams) (*oxide.Disk, error)
 	DiskDelete(context.Context, oxide.DiskDeleteParams) error
 }
 
@@ -45,26 +47,31 @@ const (
 	SecretDataTokenKey = "oxide-token"
 )
 
-// NewOxideClient constructs an oxide.Client using the secret reference from the provided
+// NewOxideClientFactory constructs oxide.Client instances using the secret reference from the
+// provided
 // OxideCluster.
-func NewOxideClient(
-	ctx context.Context,
-	k8sClient client.Client,
-	oxideCluster *infrav1.OxideCluster,
-) (OxideClient, error) {
-	secret := &corev1.Secret{}
-	if err := k8sClient.Get(ctx, client.ObjectKey{
-		Namespace: oxideCluster.Spec.CredentialsRef.Namespace,
-		Name:      oxideCluster.Spec.CredentialsRef.Name,
-	}, secret); err != nil {
-		return nil, fmt.Errorf("loading oxide credentials: %w", err)
+func NewOxideClientFactory(userAgent string) OxideClientFactory {
+	return func(
+		ctx context.Context,
+		k8sClient client.Client,
+		oxideCluster *infrav1.OxideCluster,
+	) (OxideClient, error) {
+		secret := &corev1.Secret{}
+		if err := k8sClient.Get(ctx, client.ObjectKey{
+			Namespace: oxideCluster.Spec.CredentialsRef.Namespace,
+			Name:      oxideCluster.Spec.CredentialsRef.Name,
+		}, secret); err != nil {
+			return nil, fmt.Errorf("loading oxide credentials: %w", err)
+		}
+		oxideClient, err := oxide.NewClient(
+			oxide.WithHost(string(secret.Data[SecretDataHostKey])),
+			oxide.WithToken(string(secret.Data[SecretDataTokenKey])),
+			oxide.WithTimeout(30*time.Second),
+			oxide.WithUserAgent(userAgent),
+		)
+		if err != nil {
+			return nil, fmt.Errorf("constructing oxide client: %w", err)
+		}
+		return oxideClient, nil
 	}
-	oxideClient, err := oxide.NewClient(
-		oxide.WithHost(string(secret.Data[SecretDataHostKey])),
-		oxide.WithToken(string(secret.Data[SecretDataTokenKey])),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("constructing oxide client: %w", err)
-	}
-	return oxideClient, nil
 }
