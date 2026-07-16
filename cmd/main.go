@@ -19,6 +19,7 @@ package main
 import (
 	"crypto/tls"
 	"flag"
+	"fmt"
 	"os"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
@@ -44,6 +45,8 @@ import (
 var (
 	scheme   = runtime.NewScheme()
 	setupLog = ctrl.Log.WithName("setup")
+	version  = "dev"
+	commit   = "none"
 )
 
 func init() {
@@ -100,7 +103,7 @@ func main() {
 		"The name of the metrics server key file.",
 	)
 	flag.BoolVar(&enableHTTP2, "enable-http2", false,
-		"If set, HTTP/2 will be enabled for the metrics and webhook servers")
+		"If set, HTTP/2 will be enabled for the metrics server")
 	opts := zap.Options{
 		Development: true,
 	}
@@ -193,10 +196,12 @@ func main() {
 		os.Exit(1)
 	}
 
+	userAgent := fmt.Sprintf("cluster-api-provider-oxide/%s-%s", version, commit)
+
 	if err := (&controller.OxideMachineReconciler{
 		Client:             mgr.GetClient(),
 		Scheme:             mgr.GetScheme(),
-		OxideClientFactory: cloud.NewOxideClient,
+		OxideClientFactory: cloud.NewOxideClientFactory(userAgent),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "OxideMachine")
 		os.Exit(1)
@@ -204,7 +209,7 @@ func main() {
 	if err := (&controller.OxideClusterReconciler{
 		Client:             mgr.GetClient(),
 		Scheme:             mgr.GetScheme(),
-		OxideClientFactory: cloud.NewOxideClient,
+		OxideClientFactory: cloud.NewOxideClientFactory(userAgent),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "OxideCluster")
 		os.Exit(1)
