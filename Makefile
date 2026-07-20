@@ -1,3 +1,9 @@
+# Release version: the current git tag without the "v" prefix (v0.1.2 ->
+# 0.1.2; between tags, git describe appends -<n>-g<sha>). goreleaser overrides
+# it on the make command line (see the before hook in .goreleaser.yaml) so the
+# Makefile and goreleaser always agree on one value.
+VERSION ?= $(shell git describe --tags | sed -e 's/^v//')
+
 # Image URL to use all building/pushing image targets
 IMAGE_REPO ?= ghcr.io/oxidecomputer/cluster-api-provider-oxide
 HELM_OCI_REPO ?= $(IMAGE_REPO)/helm-charts
@@ -235,12 +241,26 @@ run: generate ## Run a controller from your host.
 
 .PHONY: manifests
 manifests: generate
-	mkdir -p $(ARTIFACTS)
+# Package the charts at $(VERSION): helm template has no --app-version flag,
+# so the version-derived output (app.kubernetes.io/version) can only carry the
+# release version if the manifest is rendered from a packaged chart rather
+# than the chart dir (whose Chart.yaml holds a placeholder). The rm clears
+# stale tarballs so the `make release` helm push step only sees this version's.
+	rm -rf $(ARTIFACTS)/helm
+	mkdir -p $(ARTIFACTS)/helm
+	$(HELM) package charts/cluster-api-provider-oxide \
+		--version $(VERSION) \
+		--app-version $(VERSION) \
+		--destination $(ARTIFACTS)/helm
+	$(HELM) package charts/cluster-api-provider-oxide-crds \
+		--version $(VERSION) \
+		--app-version $(VERSION) \
+		--destination $(ARTIFACTS)/helm
 # helm never emits a Namespace object, so prepend one. The sed strips the
 # helm-specific labels the chart renders (helm.sh/chart, managed-by: Helm);
 # nothing in this manifest is managed by a helm release.
 	printf 'apiVersion: v1\nkind: Namespace\nmetadata:\n  name: $(NAMESPACE)\n---\n' > $(ARTIFACTS)/infrastructure-components.yaml
-	$(HELM) template capox charts/cluster-api-provider-oxide \
+	$(HELM) template capox $(ARTIFACTS)/helm/cluster-api-provider-oxide-$(VERSION).tgz \
 		--namespace $(NAMESPACE) \
 		--include-crds \
 		--set image.repository=$(IMAGE_REPO) \

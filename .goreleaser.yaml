@@ -6,25 +6,13 @@
 # Docs: https://goreleaser.com/customization/ko/
 version: 2
 
-env:
-  - IMAGE_TAG={{ .Version }}
 before:
   hooks:
-    # Clean out stale chart tarballs so the `make release` helm push step only
-    # sees the charts packaged for this version.
-    - rm -rf ./_artifacts/helm
-    - mkdir -p ./_artifacts/helm
-    - >-
-      helm package ./charts/cluster-api-provider-oxide
-      --version {{ .Version }}
-      --app-version {{ .Version }}
-      --destination ./_artifacts/helm
-    - >-
-      helm package ./charts/cluster-api-provider-oxide-crds
-      --version {{ .Version }}
-      --app-version {{ .Version }}
-      --destination ./_artifacts/helm
-    - make manifests
+    # Packages both charts (--version/--app-version) into _artifacts/helm and
+    # renders infrastructure-components.yaml from the packaged chart. The
+    # version is passed on the make command line because the top-level `env:`
+    # section is evaluated before {{ .Version }} is computed.
+    - make manifests VERSION={{ .Version }} IMAGE_TAG={{ .Version }}
 
 # ko re-builds the binary itself using these settings (results are cached from
 # the build pipe). CGO is disabled so the image can run on the distroless base.
