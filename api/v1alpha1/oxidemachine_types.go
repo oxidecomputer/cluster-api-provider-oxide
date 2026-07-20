@@ -22,7 +22,7 @@ import (
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 )
 
-const MachineFinalizer = "oxidemachine.infrastructure.cluster.x-k8s.io"
+const MachineFinalizer = "infrastructure.cluster.x-k8s.io/oxidemachine"
 
 // OxideMachineSpec defines the desired state of OxideMachine.
 type OxideMachineSpec struct {
