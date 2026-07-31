@@ -21,6 +21,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -162,13 +163,15 @@ func (r *OxideMachineReconciler) Reconcile(
 		instance, err = oxideClient.InstanceCreate(ctx, oxide.InstanceCreateParams{
 			Project: oxide.NameOrId(projectName),
 			Body: &oxide.InstanceCreate{
-				Name:               oxide.Name(instanceName),
-				Hostname:           oxide.Hostname(instanceName),
-				Ncpus:              oxide.InstanceCpuCount(oxideMachine.Spec.NCpus),
-				Memory:             oxide.ByteCount(oxideMachine.Spec.Memory.Value()),
-				Start:              new(true),
-				AntiAffinityGroups: toNamesOrIds(oxideMachine.Spec.AntiAffinityGroups),
-				SshPublicKeys:      toNamesOrIds(oxideMachine.Spec.SSHPublicKeys),
+				Name:     oxide.Name(instanceName),
+				Hostname: oxide.Hostname(instanceName),
+				Ncpus:    oxide.InstanceCpuCount(oxideMachine.Spec.NCpus),
+				Memory:   oxide.ByteCount(oxideMachine.Spec.Memory.Value()),
+				Start:    new(true),
+				AntiAffinityGroups: toNamesOrIds(
+					instanceAntiAffinityGroups(oxideCluster, machine, oxideMachine),
+				),
+				SshPublicKeys: toNamesOrIds(oxideMachine.Spec.SSHPublicKeys),
 				UserData: base64.StdEncoding.EncodeToString(
 					bootstrapSecret.Data["value"],
 				),
@@ -497,6 +500,28 @@ func (r *OxideMachineReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		).
 		Named("oxidemachine").
 		Complete(r)
+}
+
+// instanceAntiAffinityGroups builds the anti-affinity group list for the machine's instance: the
+// groups from the OxideMachine spec, plus the cluster-managed control plane group when the
+// OxideCluster opts in via ControlPlaneAntiAffinityPolicy and the machine is a control plane
+// machine. The OxideCluster reconciler guarantees the managed group exists before the cluster
+// reports provisioned, i.e. before any Machine is created.
+func instanceAntiAffinityGroups(
+	oxideCluster *infrav1.OxideCluster,
+	machine *clusterv1.Machine,
+	oxideMachine *infrav1.OxideMachine,
+) []string {
+	groups := oxideMachine.Spec.AntiAffinityGroups
+	if oxideCluster.Spec.ControlPlaneAntiAffinityPolicy == "" ||
+		!util.IsControlPlaneMachine(machine) {
+		return groups
+	}
+	groupName := getAntiAffinityGroupName(oxideCluster)
+	if slices.Contains(groups, groupName) {
+		return groups
+	}
+	return append(slices.Clone(groups), groupName)
 }
 
 func toNamesOrIds(values []string) []oxide.NameOrId {

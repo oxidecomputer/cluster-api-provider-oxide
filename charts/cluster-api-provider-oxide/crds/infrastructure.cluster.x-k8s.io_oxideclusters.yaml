@@ -52,6 +52,21 @@ spec:
           spec:
             description: spec defines the desired state of OxideCluster
             properties:
+              controlPlaneAntiAffinityPolicy:
+                description: |-
+                  ControlPlaneAntiAffinityPolicy, when set, makes the controller manage an anti-affinity
+                  group for the cluster's control plane machines so that their instances are spread across
+                  sleds. The group is created in the cluster's project before the cluster is marked
+                  provisioned, joined by every control plane instance at creation, and deleted with the
+                  cluster. "allow" permits co-location when the spread cannot be satisfied; "fail" refuses
+                  to place the instance instead. Note that the policy is applied when the group is first
+                  created: the Oxide API doesn't support updating a group's policy, so changing this field
+                  doesn't affect an existing group, and instances only join the group as they are created.
+                  https://docs.oxide.computer/guides/deploying-workloads#_affinity_and_anti_affinity
+                enum:
+                - allow
+                - fail
+                type: string
               controlPlaneEndpoint:
                 description: |-
                   ControlPlaneEndpoint represents the host and port of the cluster's control plane. If

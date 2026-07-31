@@ -11,11 +11,12 @@ import (
 const maxResourceLength = 63
 
 const (
-	instancePrefix   = "capi"
-	nicPrefix        = "capi"
-	bootDiskPrefix   = "capi-boot"
-	floatingIPPrefix = "capi-fip"
-	dataDiskPrefix   = "capi-data-%d"
+	instancePrefix          = "capi"
+	nicPrefix               = "capi"
+	bootDiskPrefix          = "capi-boot"
+	floatingIPPrefix        = "capi-fip"
+	dataDiskPrefix          = "capi-data-%d"
+	antiAffinityGroupPrefix = "capi-aag"
 )
 
 func hashTruncateName(name string, maxLength int) string {
@@ -55,4 +56,8 @@ func getFloatingIPName(obj metav1.Object) string {
 
 func getDataDiskName(obj metav1.Object, idx int) string {
 	return getResourceName(fmt.Sprintf(dataDiskPrefix, idx), obj)
+}
+
+func getAntiAffinityGroupName(obj metav1.Object) string {
+	return getResourceName(antiAffinityGroupPrefix, obj)
 }

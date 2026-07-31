@@ -40,6 +40,16 @@ type OxideClient interface {
 
 	DiskView(context.Context, oxide.DiskViewParams) (*oxide.Disk, error)
 	DiskDelete(context.Context, oxide.DiskDeleteParams) error
+
+	AntiAffinityGroupCreate(
+		context.Context,
+		oxide.AntiAffinityGroupCreateParams,
+	) (*oxide.AntiAffinityGroup, error)
+	AntiAffinityGroupView(
+		context.Context,
+		oxide.AntiAffinityGroupViewParams,
+	) (*oxide.AntiAffinityGroup, error)
+	AntiAffinityGroupDelete(context.Context, oxide.AntiAffinityGroupDeleteParams) error
 }
 
 const (

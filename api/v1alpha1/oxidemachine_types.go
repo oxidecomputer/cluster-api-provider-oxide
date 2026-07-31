@@ -43,8 +43,10 @@ type OxideMachineSpec struct {
 	ImageID string `json:"imageID"`
 
 	// AntiAffinityGroups is the list of anti-affinity group names or IDs that the Oxide instance
-	// should use. Anti-affinity groups should be created outside the operator, else instance
-	// creation will fail.
+	// should use. Anti-affinity groups specified should already be created, else instance
+	// creation will fail. A control plane anti-affinity group managed via the OxideCluster's
+	// ControlPlaneAntiAffinityPolicy field is joined automatically and doesn't need to be listed
+	// here.
 	// https://docs.oxide.computer/guides/deploying-workloads#_affinity_and_anti_affinity
 	// +optional
 	// +listType=set

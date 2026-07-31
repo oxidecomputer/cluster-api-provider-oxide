@@ -41,6 +41,50 @@ func (m *MockOxideClient) EXPECT() *MockOxideClientMockRecorder {
 	return m.recorder
 }
 
+// AntiAffinityGroupCreate mocks base method.
+func (m *MockOxideClient) AntiAffinityGroupCreate(arg0 context.Context, arg1 oxide.AntiAffinityGroupCreateParams) (*oxide.AntiAffinityGroup, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "AntiAffinityGroupCreate", arg0, arg1)
+	ret0, _ := ret[0].(*oxide.AntiAffinityGroup)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// AntiAffinityGroupCreate indicates an expected call of AntiAffinityGroupCreate.
+func (mr *MockOxideClientMockRecorder) AntiAffinityGroupCreate(arg0, arg1 any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AntiAffinityGroupCreate", reflect.TypeOf((*MockOxideClient)(nil).AntiAffinityGroupCreate), arg0, arg1)
+}
+
+// AntiAffinityGroupDelete mocks base method.
+func (m *MockOxideClient) AntiAffinityGroupDelete(arg0 context.Context, arg1 oxide.AntiAffinityGroupDeleteParams) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "AntiAffinityGroupDelete", arg0, arg1)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// AntiAffinityGroupDelete indicates an expected call of AntiAffinityGroupDelete.
+func (mr *MockOxideClientMockRecorder) AntiAffinityGroupDelete(arg0, arg1 any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AntiAffinityGroupDelete", reflect.TypeOf((*MockOxideClient)(nil).AntiAffinityGroupDelete), arg0, arg1)
+}
+
+// AntiAffinityGroupView mocks base method.
+func (m *MockOxideClient) AntiAffinityGroupView(arg0 context.Context, arg1 oxide.AntiAffinityGroupViewParams) (*oxide.AntiAffinityGroup, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "AntiAffinityGroupView", arg0, arg1)
+	ret0, _ := ret[0].(*oxide.AntiAffinityGroup)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// AntiAffinityGroupView indicates an expected call of AntiAffinityGroupView.
+func (mr *MockOxideClientMockRecorder) AntiAffinityGroupView(arg0, arg1 any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AntiAffinityGroupView", reflect.TypeOf((*MockOxideClient)(nil).AntiAffinityGroupView), arg0, arg1)
+}
+
 // DiskDelete mocks base method.
 func (m *MockOxideClient) DiskDelete(arg0 context.Context, arg1 oxide.DiskDeleteParams) error {
 	m.ctrl.T.Helper()

@@ -153,6 +153,126 @@ func TestEnsureFloatingIPDeleted(t *testing.T) {
 	}
 }
 
+func TestEnsureAntiAffinityGroupExists(t *testing.T) {
+	wantGroup := &oxide.AntiAffinityGroup{
+		Id:   "group-id",
+		Name: "group-name",
+	}
+
+	for _, tc := range []struct {
+		name    string
+		setup   func(*mock.MockOxideClient)
+		wantErr string
+	}{
+		{
+			name: "create",
+			setup: func(m *mock.MockOxideClient) {
+				m.EXPECT().AntiAffinityGroupView(gomock.Any(), gomock.Any()).Return(nil, httpErr("ObjectNotFound"))
+				m.EXPECT().AntiAffinityGroupCreate(gomock.Any(), gomock.Any()).DoAndReturn(
+					func(_ context.Context, params oxide.AntiAffinityGroupCreateParams) (*oxide.AntiAffinityGroup, error) {
+						assert.Equal(t, oxide.AffinityPolicyAllow, params.Body.Policy)
+						assert.Equal(t, oxide.FailureDomainSled, params.Body.FailureDomain)
+						return wantGroup, nil
+					},
+				)
+			},
+		},
+		{
+			name: "adopt",
+			setup: func(m *mock.MockOxideClient) {
+				m.EXPECT().AntiAffinityGroupView(gomock.Any(), gomock.Any()).Return(wantGroup, nil)
+			},
+		},
+		{
+			name: "create error",
+			setup: func(m *mock.MockOxideClient) {
+				m.EXPECT().AntiAffinityGroupView(gomock.Any(), gomock.Any()).Return(nil, httpErr("ObjectNotFound"))
+				m.EXPECT().AntiAffinityGroupCreate(gomock.Any(), gomock.Any()).Return(nil, httpErr("InternalError"))
+			},
+			wantErr: "creating anti-affinity group",
+		},
+		{
+			name: "view error",
+			setup: func(m *mock.MockOxideClient) {
+				m.EXPECT().AntiAffinityGroupView(gomock.Any(), gomock.Any()).Return(nil, httpErr("InternalError"))
+			},
+			wantErr: "fetching existing anti-affinity group",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			oxideClient := mock.NewMockOxideClient(ctrl)
+			tc.setup(oxideClient)
+
+			cluster := &infrav1.OxideCluster{
+				Spec: infrav1.OxideClusterSpec{ControlPlaneAntiAffinityPolicy: "allow"},
+			}
+			r := OxideClusterReconciler{}
+			gotGroup, gotErr := r.ensureAntiAffinityGroupExists(
+				context.Background(),
+				oxideClient,
+				cluster,
+				"project",
+				"group-name",
+			)
+			if tc.wantErr != "" {
+				assert.ErrorContains(t, gotErr, tc.wantErr)
+				assert.Nil(t, gotGroup)
+			} else {
+				assert.NoError(t, gotErr)
+				assert.Equal(t, wantGroup, gotGroup)
+			}
+		})
+	}
+}
+
+func TestEnsureAntiAffinityGroupDeleted(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		setup   func(*mock.MockOxideClient)
+		wantErr string
+	}{
+		{
+			name: "delete",
+			setup: func(m *mock.MockOxideClient) {
+				m.EXPECT().AntiAffinityGroupDelete(gomock.Any(), gomock.Any()).Return(nil)
+			},
+		},
+		{
+			name: "gone",
+			setup: func(m *mock.MockOxideClient) {
+				m.EXPECT().AntiAffinityGroupDelete(gomock.Any(), gomock.Any()).Return(httpErr("ObjectNotFound"))
+			},
+		},
+		{
+			name: "delete error",
+			setup: func(m *mock.MockOxideClient) {
+				m.EXPECT().AntiAffinityGroupDelete(gomock.Any(), gomock.Any()).Return(httpErr("InternalError"))
+			},
+			wantErr: "InternalError",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			oxideClient := mock.NewMockOxideClient(ctrl)
+			tc.setup(oxideClient)
+
+			r := OxideClusterReconciler{}
+			gotErr := r.ensureAntiAffinityGroupDeleted(
+				context.Background(),
+				oxideClient,
+				"project",
+				"group-name",
+			)
+			if tc.wantErr != "" {
+				assert.ErrorContains(t, gotErr, tc.wantErr)
+			} else {
+				assert.NoError(t, gotErr)
+			}
+		})
+	}
+}
+
 func TestFloatingIPAllocator(t *testing.T) {
 	for _, tc := range []struct {
 		name    string

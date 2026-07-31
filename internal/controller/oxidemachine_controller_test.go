@@ -414,3 +414,76 @@ func TestDisksFromOxideMachine(t *testing.T) {
 	}
 	assert.Equal(t, got, want)
 }
+
+func TestInstanceAntiAffinityGroups(t *testing.T) {
+	oxideCluster := &infrav1.OxideCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "cluster",
+			Namespace: "default",
+		},
+		Spec: infrav1.OxideClusterSpec{ControlPlaneAntiAffinityPolicy: "allow"},
+	}
+	managedGroup := "capi-aag-default-cluster"
+
+	controlPlaneMachine := &clusterv1.Machine{
+		ObjectMeta: metav1.ObjectMeta{
+			Labels: map[string]string{clusterv1.MachineControlPlaneLabel: ""},
+		},
+	}
+	workerMachine := &clusterv1.Machine{}
+
+	for _, tc := range []struct {
+		name         string
+		oxideCluster *infrav1.OxideCluster
+		machine      *clusterv1.Machine
+		specGroups   []string
+		want         []string
+	}{
+		{
+			name:         "control plane joins managed group",
+			oxideCluster: oxideCluster,
+			machine:      controlPlaneMachine,
+			want:         []string{managedGroup},
+		},
+		{
+			name:         "spec groups are preserved",
+			oxideCluster: oxideCluster,
+			machine:      controlPlaneMachine,
+			specGroups:   []string{"user-group"},
+			want:         []string{"user-group", managedGroup},
+		},
+		{
+			name:         "managed group not duplicated",
+			oxideCluster: oxideCluster,
+			machine:      controlPlaneMachine,
+			specGroups:   []string{managedGroup},
+			want:         []string{managedGroup},
+		},
+		{
+			name:         "worker machine unaffected",
+			oxideCluster: oxideCluster,
+			machine:      workerMachine,
+			specGroups:   []string{"user-group"},
+			want:         []string{"user-group"},
+		},
+		{
+			name: "policy unset",
+			oxideCluster: &infrav1.OxideCluster{
+				ObjectMeta: oxideCluster.ObjectMeta,
+			},
+			machine:    controlPlaneMachine,
+			specGroups: []string{"user-group"},
+			want:       []string{"user-group"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			oxideMachine := &infrav1.OxideMachine{
+				Spec: infrav1.OxideMachineSpec{AntiAffinityGroups: tc.specGroups},
+			}
+			got := instanceAntiAffinityGroups(tc.oxideCluster, tc.machine, oxideMachine)
+			assert.Equal(t, tc.want, got)
+			// The spec's group list must not be mutated by the append.
+			assert.Equal(t, tc.specGroups, oxideMachine.Spec.AntiAffinityGroups)
+		})
+	}
+}

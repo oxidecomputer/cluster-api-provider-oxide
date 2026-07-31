@@ -113,11 +113,7 @@ func (r *OxideClusterReconciler) Reconcile(
 	ipName := getFloatingIPName(oxideCluster)
 
 	if !oxideCluster.DeletionTimestamp.IsZero() {
-		if err := r.ensureFloatingIPDeleted(ctx, oxideClient, projectName, ipName); err != nil {
-			return ctrl.Result{}, fmt.Errorf("deleting floating ip: %w", err)
-		}
-		controllerutil.RemoveFinalizer(oxideCluster, infrav1.ClusterFinalizer)
-		return ctrl.Result{}, retErr
+		return ctrl.Result{}, r.reconcileDelete(ctx, oxideClient, oxideCluster, projectName, ipName)
 	} else if !cluster.DeletionTimestamp.IsZero() {
 		log.Info(
 			"cluster is being deleted, aborting OxideCluster reconcile",
@@ -140,10 +136,23 @@ func (r *OxideClusterReconciler) Reconcile(
 		oxideCluster.Spec.ControlPlaneEndpoint.Port = 6443
 	}
 
+	// Reconcile the control plane anti-affinity group, if enabled. This must happen before the
+	// cluster is marked provisioned below: upstream CAPI controllers won't create Machines until
+	// then, and instance creation fails if the machine references a group that doesn't exist.
+	if err := r.reconcileAntiAffinityGroup(
+		ctx,
+		oxideClient,
+		oxideCluster,
+		projectName,
+	); err != nil {
+		return ctrl.Result{}, fmt.Errorf("ensuring anti-affinity group: %w", err)
+	}
+
 	// We consider the OxideCluster to be Ready when the Oxide infrastructure that it manages (i.e.
-	// the floating IP) is provisioned. Note that upstream CAPI controllers won't provision
-	// Machine/OxideMachine resources until the OxideCluster is Ready, so we must mark Ready here
-	// rather than waiting for OxideMachines to be provisioned and attached.
+	// the floating IP and control plane anti-affinity group) is provisioned. Note that upstream
+	// CAPI controllers won't provision Machine/OxideMachine resources until the OxideCluster is
+	// Ready, so we must mark Ready here rather than waiting for OxideMachines to be provisioned
+	// and attached.
 	oxideCluster.Status.Initialization.Provisioned = new(true)
 	conditions.Set(oxideCluster, metav1.Condition{
 		Type:   clusterv1.ReadyCondition,
@@ -343,6 +352,115 @@ func (r *OxideClusterReconciler) ensureFloatingIPExists(
 	}
 
 	return ip, nil
+}
+
+// reconcileDelete deletes the Oxide resources owned by the OxideCluster and removes the
+// finalizer.
+func (r *OxideClusterReconciler) reconcileDelete(
+	ctx context.Context,
+	oxideClient cloud.OxideClient,
+	oxideCluster *infrav1.OxideCluster,
+	projectName string,
+	ipName string,
+) error {
+	if err := r.ensureFloatingIPDeleted(ctx, oxideClient, projectName, ipName); err != nil {
+		return fmt.Errorf("deleting floating ip: %w", err)
+	}
+	// Delete the control plane anti-affinity group unconditionally rather than only when the
+	// policy is currently set, so a group created before the policy was unset is cleaned up too.
+	// CAPI deletes the cluster's Machines before its infrastructure, so the group has no members
+	// by the time this runs.
+	if err := r.ensureAntiAffinityGroupDeleted(
+		ctx,
+		oxideClient,
+		projectName,
+		getAntiAffinityGroupName(oxideCluster),
+	); err != nil {
+		return fmt.Errorf("deleting anti-affinity group: %w", err)
+	}
+	controllerutil.RemoveFinalizer(oxideCluster, infrav1.ClusterFinalizer)
+	return nil
+}
+
+// reconcileAntiAffinityGroup ensures the control plane anti-affinity group exists when the
+// cluster opts in via ControlPlaneAntiAffinityPolicy, and is a no-op otherwise.
+func (r *OxideClusterReconciler) reconcileAntiAffinityGroup(
+	ctx context.Context,
+	oxideClient cloud.OxideClient,
+	oxideCluster *infrav1.OxideCluster,
+	projectName string,
+) error {
+	if oxideCluster.Spec.ControlPlaneAntiAffinityPolicy == "" {
+		return nil
+	}
+	_, err := r.ensureAntiAffinityGroupExists(
+		ctx,
+		oxideClient,
+		oxideCluster,
+		projectName,
+		getAntiAffinityGroupName(oxideCluster),
+	)
+	return err
+}
+
+// ensureAntiAffinityGroupExists creates or views the control plane anti-affinity group. An
+// existing group is adopted as is: the Oxide API doesn't support updating a group's policy, so
+// drift between the group and ControlPlaneAntiAffinityPolicy isn't reconciled.
+func (r *OxideClusterReconciler) ensureAntiAffinityGroupExists(
+	ctx context.Context,
+	oxideClient cloud.OxideClient,
+	oxideCluster *infrav1.OxideCluster,
+	projectName string,
+	groupName string,
+) (*oxide.AntiAffinityGroup, error) {
+	group, err := oxideClient.AntiAffinityGroupView(ctx, oxide.AntiAffinityGroupViewParams{
+		Project:           oxide.NameOrId(projectName),
+		AntiAffinityGroup: oxide.NameOrId(groupName),
+	})
+	if err != nil {
+		if !errors.Is(err, oxide.ErrObjectNotFound) {
+			return nil, fmt.Errorf("fetching existing anti-affinity group: %w", err)
+		}
+
+		group, err = oxideClient.AntiAffinityGroupCreate(ctx, oxide.AntiAffinityGroupCreateParams{
+			Project: oxide.NameOrId(projectName),
+			Body: &oxide.AntiAffinityGroupCreate{
+				Name: oxide.Name(groupName),
+				Description: fmt.Sprintf(
+					"Control plane anti-affinity for CAPI cluster %s/%s",
+					oxideCluster.Namespace,
+					oxideCluster.Name,
+				),
+				FailureDomain: oxide.FailureDomainSled,
+				Policy: oxide.AffinityPolicy(
+					oxideCluster.Spec.ControlPlaneAntiAffinityPolicy,
+				),
+			},
+		})
+		if err != nil {
+			return nil, fmt.Errorf("creating anti-affinity group: %w", err)
+		}
+	}
+
+	return group, nil
+}
+
+// ensureAntiAffinityGroupDeleted deletes the control plane anti-affinity group if it exists.
+func (r *OxideClusterReconciler) ensureAntiAffinityGroupDeleted(
+	ctx context.Context,
+	oxideClient cloud.OxideClient,
+	projectName string,
+	groupName string,
+) error {
+	if err := oxideClient.AntiAffinityGroupDelete(ctx, oxide.AntiAffinityGroupDeleteParams{
+		Project:           oxide.NameOrId(projectName),
+		AntiAffinityGroup: oxide.NameOrId(groupName),
+	}); err != nil {
+		if !errors.Is(err, oxide.ErrObjectNotFound) {
+			return err
+		}
+	}
+	return nil
 }
 
 // ensureFloatingIPDeleted deletes the floating IP if it exists.

@@ -15,7 +15,7 @@ MAKEFILE_PATH := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 TOOLS_MOD := $(MAKEFILE_PATH)/tools/go.mod
 GO_TOOL := go tool -modfile=$(TOOLS_MOD)
 NAMESPACE ?= capox-system
-HELM_VERSION ?= v4.2.2
+HELM_VERSION ?= v4.2.3
 # CAPI contract version implemented by the provider; stamped on every release
 # series entry when hack/gen-capi-metadata.sh generates metadata.yaml. Bump it
 # (and add a series boundary in the script) when migrating to a new contract.
