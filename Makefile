@@ -9,7 +9,7 @@ IMAGE_REPO ?= ghcr.io/oxidecomputer/cluster-api-provider-oxide
 HELM_OCI_REPO ?= $(IMAGE_REPO)/helm-charts
 IMAGE_TAG ?= dev
 IMG ?= $(IMAGE_REPO):$(IMAGE_TAG)
-KO_DOCKER_REPO ?= $(IMAGE_REPO)
+export KO_DOCKER_REPO ?= $(IMAGE_REPO)
 KOCACHE ?= ~/.ko
 MAKEFILE_PATH := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 TOOLS_MOD := $(MAKEFILE_PATH)/tools/go.mod
@@ -168,7 +168,7 @@ export PATH := $(LOCALBIN):$(PATH)
 CONTROLLER_GEN ?= $(GO_TOOL) controller-gen
 KUBECTL ?= $(LOCALBIN)/kubectl
 KIND ?= $(GO_TOOL) kind
-KO ?= KO_CACHE=$(KO_CACHE) $(GO_TOOL) ko
+KO ?= KOCACHE=$(KOCACHE) $(GO_TOOL) ko
 KUSTOMIZE ?= $(GO_TOOL) kustomize
 GORELEASER ?= $(GO_TOOL) goreleaser
 ENVTEST ?= go tool setup-envtest # this tool is in the main go.mod so the version stays in-sync
@@ -219,8 +219,8 @@ golangci-lint:
 IMAGE_REF_FILE := $(shell echo "$${TMPDIR:-/tmp}")/capox-image-ref
 
 .PHONY: build
-build: generate ## Builds a container image using ko and pushes to $KO_DOCKER_REPO
-	$(KO) build ./cmd | tee $(IMAGE_REF_FILE)
+build: generate ## Builds a container image using ko and pushes it to $IMAGE_REPO:$IMAGE_TAG
+	$(KO) build --bare --tags $(IMAGE_TAG) ./cmd | tee $(IMAGE_REF_FILE)
 
 .PHONY: build-kind
 build-kind:
@@ -290,8 +290,8 @@ deploy: generate ## Deploy controller to the K8s cluster specified in ~/.kube/co
 
 # Internal: deploy whatever image ref a build target captured in
 # $(IMAGE_REF_FILE). The chart renders "repository:tag", so splitting the ref
-# on its last colon recomposes to the exact ref ko printed — a digest ref
-# (repo@sha256 + hex) for registry builds, a digest-hex tag for --local
+# on its last colon recomposes to the exact ref ko printed — a tag+digest ref
+# (repo:tag@sha256 + hex) for registry builds, a digest-hex tag for kind
 # builds. Either way the ref is unique per build, so every deploy rolls the
 # pods.
 .PHONY: helm-apply

@@ -28,6 +28,7 @@ spec:
   vpc: "${OXIDE_VPC:-default}"
   subnet: "${OXIDE_SUBNET:-default}"
   ipPool: ${OXIDE_IP_POOL:-""}
+  controlPlaneAntiAffinityPolicy: allow
 ---
 apiVersion: controlplane.cluster.x-k8s.io/v1beta2
 kind: KubeadmControlPlane
