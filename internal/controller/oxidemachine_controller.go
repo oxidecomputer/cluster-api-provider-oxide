@@ -32,7 +32,10 @@ import (
 	"sigs.k8s.io/cluster-api/util"
 	"sigs.k8s.io/cluster-api/util/conditions"
 	"sigs.k8s.io/cluster-api/util/patch"
+	"sigs.k8s.io/cluster-api/util/paused"
+	"sigs.k8s.io/cluster-api/util/predicates"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
@@ -77,6 +80,32 @@ func (r *OxideMachineReconciler) Reconcile(
 		return ctrl.Result{}, err
 	}
 
+	machine, err := util.GetOwnerMachine(ctx, r.Client, oxideMachine.ObjectMeta)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	if machine == nil {
+		log.Info("waiting for owner machine reference")
+		return ctrl.Result{}, nil
+	}
+
+	cluster, err := util.GetClusterFromMetadata(ctx, r.Client, machine.ObjectMeta)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("getting owner cluster: %w", err)
+	}
+
+	// Set the Paused condition and return early if paused, e.g. during clusterctl move.
+	if isPaused, requeue, err := paused.EnsurePausedCondition(
+		ctx,
+		r.Client,
+		cluster,
+		oxideMachine,
+	); err != nil ||
+		isPaused ||
+		requeue {
+		return ctrl.Result{}, err
+	}
+
 	patchHelper, err := patch.NewHelper(oxideMachine, r.Client)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("building patch helper: %w", err)
@@ -86,15 +115,6 @@ func (r *OxideMachineReconciler) Reconcile(
 			retErr = fmt.Errorf("patching machine: %w", err)
 		}
 	}()
-
-	machine, err := util.GetOwnerMachine(ctx, r.Client, oxideMachine.ObjectMeta)
-	if err != nil {
-		return ctrl.Result{}, err
-	}
-	if machine == nil {
-		log.Info("waiting for owner machine reference")
-		return ctrl.Result{}, nil
-	}
 
 	clusterName := machine.Labels[clusterv1.ClusterNameLabel]
 
@@ -114,7 +134,6 @@ func (r *OxideMachineReconciler) Reconcile(
 	projectName := oxideCluster.Spec.Project
 	instanceName := getInstanceName(oxideMachine)
 	bootDiskName := getBootDiskName(oxideMachine)
-	nicName := getNicName(oxideMachine)
 
 	if !oxideMachine.DeletionTimestamp.IsZero() {
 		return r.handleDelete(
@@ -131,103 +150,13 @@ func (r *OxideMachineReconciler) Reconcile(
 
 	// Ensure instance exists. Instance creation idempotently creates the disk and NIC as well, so
 	// create all resources in a single request.
-	var instance *oxide.Instance
-	if oxideMachine.Spec.ProviderID == "" {
-		// Fetch the UserData from the bootstrap secret. If the secret isn't set on the spec yet,
-		// mark the OxideMachine as unready, and wait for an update to DataSecretName to trigger a
-		// new reconcile.
-		bootstrapSecretName := machine.Spec.Bootstrap.DataSecretName
-		if bootstrapSecretName == nil {
-			conditions.Set(oxideMachine, metav1.Condition{
-				Type:   clusterv1.ReadyCondition,
-				Status: metav1.ConditionFalse,
-				Reason: clusterv1.WaitingForBootstrapDataReason,
-			})
-			return ctrl.Result{}, nil
-		}
-		var bootstrapSecret corev1.Secret
-		if err := r.Get(ctx, client.ObjectKey{
-			Namespace: machine.Namespace,
-			Name:      *bootstrapSecretName,
-		}, &bootstrapSecret); err != nil {
-			return ctrl.Result{}, fmt.Errorf("fetching bootstrap secret: %w", err)
-		}
-		if _, ok := bootstrapSecret.Data["value"]; !ok {
-			return ctrl.Result{}, fmt.Errorf(
-				"missing `value` key in bootstrap secret %s",
-				*bootstrapSecretName,
-			)
-		}
-
-		instance, err = oxideClient.InstanceCreate(ctx, oxide.InstanceCreateParams{
-			Project: oxide.NameOrId(projectName),
-			Body: &oxide.InstanceCreate{
-				Name:               oxide.Name(instanceName),
-				Hostname:           oxide.Hostname(instanceName),
-				Ncpus:              oxide.InstanceCpuCount(oxideMachine.Spec.NCpus),
-				Memory:             oxide.ByteCount(oxideMachine.Spec.Memory.Value()),
-				Start:              new(true),
-				AntiAffinityGroups: toNamesOrIds(oxideMachine.Spec.AntiAffinityGroups),
-				SshPublicKeys:      toNamesOrIds(oxideMachine.Spec.SSHPublicKeys),
-				UserData: base64.StdEncoding.EncodeToString(
-					bootstrapSecret.Data["value"],
-				),
-				BootDisk: oxide.InstanceDiskAttachment{
-					Value: oxide.InstanceDiskAttachmentCreate{
-						Name: oxide.Name(bootDiskName),
-						Size: oxide.ByteCount(oxideMachine.Spec.DiskSize.Value()),
-						DiskBackend: oxide.DiskBackend{
-							Value: oxide.DiskBackendDistributed{
-								DiskSource: oxide.DiskSource{
-									Value: oxide.DiskSourceImage{
-										ImageId: oxideMachine.Spec.ImageID,
-									},
-								},
-							},
-						},
-					},
-				},
-				Disks: disksFromOxideMachine(oxideMachine),
-				NetworkInterfaces: oxide.InstanceNetworkInterfaceAttachment{
-					Value: oxide.InstanceNetworkInterfaceAttachmentCreate{
-						Params: []oxide.InstanceNetworkInterfaceCreate{
-							{
-								Name:       oxide.Name(nicName),
-								VpcName:    oxide.Name(oxideCluster.Spec.VPC),
-								SubnetName: oxide.Name(oxideCluster.Spec.Subnet),
-							},
-						},
-					},
-				},
-				ExternalIps: externalIPsFromMachine(oxideMachine),
-			},
-		})
-		if err != nil {
-			// Look up the instance if creation failed with a conflict, and adopt the existing
-			// instance if found. Note: if an instance was created out of band with unexpected
-			// parameters, it will be adopted as well; operators shouldn't create or modify these
-			// instances outside the reconciler.
-			if !errors.Is(err, oxide.ErrObjectAlreadyExists) {
-				return ctrl.Result{}, fmt.Errorf("creating oxide instance: %w", err)
-			}
-			instance, err = oxideClient.InstanceView(ctx, oxide.InstanceViewParams{
-				Project:  oxide.NameOrId(projectName),
-				Instance: oxide.NameOrId(instanceName),
-			})
-			if err != nil {
-				return ctrl.Result{}, fmt.Errorf("viewing existing oxide instance: %w", err)
-			}
-		}
-
-		oxideMachine.Spec.ProviderID = cloud.NewProviderID(instance.Id)
-	} else {
-		instance, err = oxideClient.InstanceView(ctx, oxide.InstanceViewParams{
-			Project:  oxide.NameOrId(projectName),
-			Instance: oxide.NameOrId(instanceName),
-		})
-		if err != nil {
-			return ctrl.Result{}, fmt.Errorf("fetching oxide instance: %w", err)
-		}
+	instance, err := r.ensureInstance(ctx, oxideClient, oxideMachine, machine, oxideCluster)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	if instance == nil {
+		// Waiting for bootstrap data; a Machine update triggers the next reconcile.
+		return ctrl.Result{}, nil
 	}
 
 	instanceRunning, instance, err := r.ensureInstanceRunning(ctx, oxideClient, instance)
@@ -288,6 +217,119 @@ func (r *OxideMachineReconciler) Reconcile(
 	}
 
 	return ctrl.Result{}, nil
+}
+
+// ensureInstance idempotently creates or adopts the Oxide instance for the machine, setting
+// Spec.ProviderID on creation. It returns a nil instance while waiting for bootstrap data.
+func (r *OxideMachineReconciler) ensureInstance(
+	ctx context.Context,
+	oxideClient cloud.OxideClient,
+	oxideMachine *infrav1.OxideMachine,
+	machine *clusterv1.Machine,
+	oxideCluster *infrav1.OxideCluster,
+) (*oxide.Instance, error) {
+	projectName := oxideCluster.Spec.Project
+	instanceName := getInstanceName(oxideMachine)
+
+	if oxideMachine.Spec.ProviderID != "" {
+		instance, err := oxideClient.InstanceView(ctx, oxide.InstanceViewParams{
+			Project:  oxide.NameOrId(projectName),
+			Instance: oxide.NameOrId(instanceName),
+		})
+		if err != nil {
+			return nil, fmt.Errorf("fetching oxide instance: %w", err)
+		}
+		return instance, nil
+	}
+
+	// Fetch the UserData from the bootstrap secret. If the secret isn't set on the spec yet,
+	// mark the OxideMachine as unready, and wait for an update to DataSecretName to trigger a
+	// new reconcile.
+	bootstrapSecretName := machine.Spec.Bootstrap.DataSecretName
+	if bootstrapSecretName == nil {
+		conditions.Set(oxideMachine, metav1.Condition{
+			Type:   clusterv1.ReadyCondition,
+			Status: metav1.ConditionFalse,
+			Reason: clusterv1.WaitingForBootstrapDataReason,
+		})
+		return nil, nil
+	}
+	var bootstrapSecret corev1.Secret
+	if err := r.Get(ctx, client.ObjectKey{
+		Namespace: machine.Namespace,
+		Name:      *bootstrapSecretName,
+	}, &bootstrapSecret); err != nil {
+		return nil, fmt.Errorf("fetching bootstrap secret: %w", err)
+	}
+	if _, ok := bootstrapSecret.Data["value"]; !ok {
+		return nil, fmt.Errorf(
+			"missing `value` key in bootstrap secret %s",
+			*bootstrapSecretName,
+		)
+	}
+
+	instance, err := oxideClient.InstanceCreate(ctx, oxide.InstanceCreateParams{
+		Project: oxide.NameOrId(projectName),
+		Body: &oxide.InstanceCreate{
+			Name:               oxide.Name(instanceName),
+			Hostname:           oxide.Hostname(instanceName),
+			Ncpus:              oxide.InstanceCpuCount(oxideMachine.Spec.NCpus),
+			Memory:             oxide.ByteCount(oxideMachine.Spec.Memory.Value()),
+			Start:              new(true),
+			AntiAffinityGroups: toNamesOrIds(oxideMachine.Spec.AntiAffinityGroups),
+			SshPublicKeys:      toNamesOrIds(oxideMachine.Spec.SSHPublicKeys),
+			UserData: base64.StdEncoding.EncodeToString(
+				bootstrapSecret.Data["value"],
+			),
+			BootDisk: oxide.InstanceDiskAttachment{
+				Value: oxide.InstanceDiskAttachmentCreate{
+					Name: oxide.Name(getBootDiskName(oxideMachine)),
+					Size: oxide.ByteCount(oxideMachine.Spec.DiskSize.Value()),
+					DiskBackend: oxide.DiskBackend{
+						Value: oxide.DiskBackendDistributed{
+							DiskSource: oxide.DiskSource{
+								Value: oxide.DiskSourceImage{
+									ImageId: oxideMachine.Spec.ImageID,
+								},
+							},
+						},
+					},
+				},
+			},
+			Disks: disksFromOxideMachine(oxideMachine),
+			NetworkInterfaces: oxide.InstanceNetworkInterfaceAttachment{
+				Value: oxide.InstanceNetworkInterfaceAttachmentCreate{
+					Params: []oxide.InstanceNetworkInterfaceCreate{
+						{
+							Name:       oxide.Name(getNicName(oxideMachine)),
+							VpcName:    oxide.Name(oxideCluster.Spec.VPC),
+							SubnetName: oxide.Name(oxideCluster.Spec.Subnet),
+						},
+					},
+				},
+			},
+			ExternalIps: externalIPsFromMachine(oxideMachine),
+		},
+	})
+	if err != nil {
+		// Look up the instance if creation failed with a conflict, and adopt the existing
+		// instance if found. Note: if an instance was created out of band with unexpected
+		// parameters, it will be adopted as well; operators shouldn't create or modify these
+		// instances outside the reconciler.
+		if !errors.Is(err, oxide.ErrObjectAlreadyExists) {
+			return nil, fmt.Errorf("creating oxide instance: %w", err)
+		}
+		instance, err = oxideClient.InstanceView(ctx, oxide.InstanceViewParams{
+			Project:  oxide.NameOrId(projectName),
+			Instance: oxide.NameOrId(instanceName),
+		})
+		if err != nil {
+			return nil, fmt.Errorf("viewing existing oxide instance: %w", err)
+		}
+	}
+
+	oxideMachine.Spec.ProviderID = cloud.NewProviderID(instance.Id)
+	return instance, nil
 }
 
 // ensureInstanceRunning ensures that the given instance is running, starting it if necessary.
@@ -487,6 +529,15 @@ func (r *OxideMachineReconciler) ensureDiskDeleted(
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *OxideMachineReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	log := mgr.GetLogger().WithValues("controller", "oxidemachine")
+	clusterToOxideMachines, err := util.ClusterToTypedObjectsMapper(
+		mgr.GetClient(),
+		&infrav1.OxideMachineList{},
+		mgr.GetScheme(),
+	)
+	if err != nil {
+		return fmt.Errorf("creating cluster to oxidemachines mapper: %w", err)
+	}
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&infrav1.OxideMachine{}).
 		// The OxideMachine reconciler depends on the state of the parent Machine; watch the parent
@@ -494,6 +545,13 @@ func (r *OxideMachineReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(
 			&clusterv1.Machine{},
 			handler.EnqueueRequestsFromMapFunc(util.MachineToInfrastructureMapFunc(infrav1.GroupVersion.WithKind("OxideMachine"))),
+		).
+
+		// Reconcile on Cluster pause transitions, e.g. to resume after a clusterctl move unpauses.
+		Watches(
+			&clusterv1.Cluster{},
+			handler.EnqueueRequestsFromMapFunc(clusterToOxideMachines),
+			builder.WithPredicates(predicates.ClusterPausedTransitions(mgr.GetScheme(), log)),
 		).
 		Named("oxidemachine").
 		Complete(r)

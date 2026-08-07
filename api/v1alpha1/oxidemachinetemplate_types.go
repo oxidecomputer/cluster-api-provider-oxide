@@ -59,6 +59,8 @@ type OxideMachineTemplateResource struct {
 // +kubebuilder:subresource:status
 // +kubebuilder:metadata:labels="cluster.x-k8s.io/v1beta1=v1alpha1"
 // +kubebuilder:metadata:labels="cluster.x-k8s.io/v1beta2=v1alpha1"
+// +kubebuilder:metadata:labels="cluster.x-k8s.io/provider=infrastructure-oxide"
+// +kubebuilder:metadata:labels="clusterctl.cluster.x-k8s.io="
 // OxideMachineTemplate is the Schema for the oxidemachinetemplates API
 type OxideMachineTemplate struct {
 	metav1.TypeMeta `json:",inline"`

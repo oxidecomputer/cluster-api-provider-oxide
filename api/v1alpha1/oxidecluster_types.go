@@ -115,6 +115,8 @@ type OxideClusterInitializationStatus struct {
 // +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
 // +kubebuilder:metadata:labels="cluster.x-k8s.io/v1beta1=v1alpha1"
 // +kubebuilder:metadata:labels="cluster.x-k8s.io/v1beta2=v1alpha1"
+// +kubebuilder:metadata:labels="cluster.x-k8s.io/provider=infrastructure-oxide"
+// +kubebuilder:metadata:labels="clusterctl.cluster.x-k8s.io="
 // OxideCluster is the Schema for the oxideclusters API
 type OxideCluster struct {
 	metav1.TypeMeta `json:",inline"`
