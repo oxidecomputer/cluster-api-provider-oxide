@@ -18,18 +18,102 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	infrav1 "github.com/oxidecomputer/cluster-api-provider-oxide/api/v1alpha1"
+	"github.com/oxidecomputer/cluster-api-provider-oxide/internal/cloud"
 	"github.com/oxidecomputer/cluster-api-provider-oxide/internal/cloud/mock"
 	"github.com/oxidecomputer/oxide.go/oxide"
 )
+
+func TestOxideMachineReconcilePaused(t *testing.T) {
+	scheme := newPauseTestScheme(t)
+	cluster := &clusterv1.Cluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default"},
+		Spec:       clusterv1.ClusterSpec{Paused: new(true)},
+	}
+	oxideCluster := &infrav1.OxideCluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default"},
+	}
+	machine := &clusterv1.Machine{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-machine",
+			Namespace: "default",
+			Labels:    map[string]string{clusterv1.ClusterNameLabel: "test"},
+		},
+	}
+	oxideMachine := &infrav1.OxideMachine{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-machine",
+			Namespace: "default",
+			OwnerReferences: []metav1.OwnerReference{{
+				APIVersion: clusterv1.GroupVersion.String(),
+				Kind:       "Machine",
+				Name:       "test-machine",
+				UID:        "test-machine-uid",
+			}},
+		},
+	}
+	k8sClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(cluster, oxideCluster, machine, oxideMachine).
+		WithStatusSubresource(&infrav1.OxideMachine{}).
+		Build()
+
+	factoryCalls := 0
+	r := &OxideMachineReconciler{
+		Client: k8sClient,
+		Scheme: scheme,
+		OxideClientFactory: func(context.Context, client.Client, *infrav1.OxideCluster) (cloud.OxideClient, error) {
+			factoryCalls++
+			return nil, errors.New("halting test reconcile")
+		},
+	}
+	ctx := context.Background()
+	req := ctrl.Request{
+		NamespacedName: types.NamespacedName{Namespace: "default", Name: "test-machine"},
+	}
+
+	// While paused, the first reconcile sets the Paused condition and requeues, and subsequent
+	// reconciles skip. The Oxide client must never be constructed.
+	for range 2 {
+		result, err := r.Reconcile(ctx, req)
+		assert.NoError(t, err)
+		assert.Equal(t, ctrl.Result{}, result)
+	}
+	assert.Equal(t, 0, factoryCalls)
+	if cond := getPausedCondition(t, k8sClient, oxideMachine); assert.NotNil(t, cond) {
+		assert.Equal(t, metav1.ConditionTrue, cond.Status)
+	}
+
+	// Unpause the Cluster. The next reconcile only flips the Paused condition; the one after
+	// resumes normal reconciliation and constructs the Oxide client.
+	assert.NoError(t, k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), cluster))
+	cluster.Spec.Paused = new(false)
+	assert.NoError(t, k8sClient.Update(ctx, cluster))
+
+	_, err := r.Reconcile(ctx, req)
+	assert.NoError(t, err)
+	assert.Equal(t, 0, factoryCalls)
+	if cond := getPausedCondition(t, k8sClient, oxideMachine); assert.NotNil(t, cond) {
+		assert.Equal(t, metav1.ConditionFalse, cond.Status)
+	}
+
+	_, err = r.Reconcile(ctx, req)
+	assert.ErrorContains(t, err, "halting test reconcile")
+	assert.Equal(t, 1, factoryCalls)
+}
 
 func TestEnsureInstanceRunning(t *testing.T) {
 	for _, tc := range []struct {

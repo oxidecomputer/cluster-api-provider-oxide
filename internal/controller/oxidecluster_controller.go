@@ -29,7 +29,10 @@ import (
 	"sigs.k8s.io/cluster-api/util"
 	"sigs.k8s.io/cluster-api/util/conditions"
 	"sigs.k8s.io/cluster-api/util/patch"
+	"sigs.k8s.io/cluster-api/util/paused"
+	"sigs.k8s.io/cluster-api/util/predicates"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
@@ -81,6 +84,27 @@ func (r *OxideClusterReconciler) Reconcile(
 		return ctrl.Result{}, err
 	}
 
+	cluster, err := util.GetOwnerCluster(ctx, r.Client, oxideCluster.ObjectMeta)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	if cluster == nil {
+		log.Info("missing ownerRef on OxideCluster", "name", oxideCluster.Name)
+		return ctrl.Result{}, nil
+	}
+
+	// Set the Paused condition and return early if paused, e.g. during clusterctl move.
+	if isPaused, requeue, err := paused.EnsurePausedCondition(
+		ctx,
+		r.Client,
+		cluster,
+		oxideCluster,
+	); err != nil ||
+		isPaused ||
+		requeue {
+		return ctrl.Result{}, err
+	}
+
 	patchHelper, err := patch.NewHelper(oxideCluster, r.Client)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("building patch helper: %w", err)
@@ -90,15 +114,6 @@ func (r *OxideClusterReconciler) Reconcile(
 			retErr = errors.Join(retErr, fmt.Errorf("patching cluster: %w", err))
 		}
 	}()
-
-	cluster, err := util.GetOwnerCluster(ctx, r.Client, oxideCluster.ObjectMeta)
-	if err != nil {
-		return ctrl.Result{}, err
-	}
-	if cluster == nil {
-		log.Info("missing ownerRef on OxideCluster", "name", oxideCluster.Name)
-		return ctrl.Result{}, nil
-	}
 
 	oxideClient, err := r.OxideClientFactory(ctx, r.Client, oxideCluster)
 	if err != nil {
@@ -151,8 +166,23 @@ func (r *OxideClusterReconciler) Reconcile(
 		Reason: infrav1.ReasonFloatingIPProvisioned,
 	})
 
-	// Ensure floating IP is attached to an instance. Use the 0th ready control plane machine if
-	// unattached.
+	if err := r.reconcileFloatingIPAttachment(ctx, oxideClient, oxideCluster, ip); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	return ctrl.Result{}, nil
+}
+
+// reconcileFloatingIPAttachment ensures the floating IP is attached to a provisioned control plane
+// instance, using the 0th ready one if unattached, and sets the FloatingIPAttached condition.
+func (r *OxideClusterReconciler) reconcileFloatingIPAttachment(
+	ctx context.Context,
+	oxideClient cloud.OxideClient,
+	oxideCluster *infrav1.OxideCluster,
+	ip *oxide.FloatingIp,
+) error {
+	log := logf.FromContext(ctx)
+
 	shouldAttach := true
 	var machines infrav1.OxideMachineList
 
@@ -167,14 +197,14 @@ func (r *OxideClusterReconciler) Reconcile(
 			clusterv1.MachineControlPlaneLabel: "",
 		},
 	); err != nil {
-		return ctrl.Result{}, fmt.Errorf("listing oxide machines: %w", err)
+		return fmt.Errorf("listing oxide machines: %w", err)
 	}
 	if ip.InstanceId != "" {
 		for _, machine := range machines.Items {
 			if machine.Spec.ProviderID != "" {
 				instanceID, err := cloud.InstanceIDFromProviderID(machine.Spec.ProviderID)
 				if err != nil {
-					return ctrl.Result{}, fmt.Errorf("parsing provider id: %w", err)
+					return fmt.Errorf("parsing provider id: %w", err)
 				}
 				if instanceID == ip.InstanceId {
 					shouldAttach = false
@@ -199,11 +229,12 @@ func (r *OxideClusterReconciler) Reconcile(
 				"instance",
 				ip.InstanceId,
 			)
+			var err error
 			ip, err = oxideClient.FloatingIpDetach(ctx, oxide.FloatingIpDetachParams{
 				FloatingIp: oxide.NameOrId(ip.Id),
 			})
 			if err != nil {
-				return ctrl.Result{}, fmt.Errorf("detaching floating ip: %w", err)
+				return fmt.Errorf("detaching floating ip: %w", err)
 			}
 		}
 
@@ -236,7 +267,7 @@ func (r *OxideClusterReconciler) Reconcile(
 			}
 			instanceID, err := cloud.InstanceIDFromProviderID(machine.Spec.ProviderID)
 			if err != nil {
-				return ctrl.Result{}, fmt.Errorf("parsing provider id: %w", err)
+				return fmt.Errorf("parsing provider id: %w", err)
 			}
 			log.Info("attaching floating IP", "ip", ip.Ip, "instance", instanceID)
 			ip, err = oxideClient.FloatingIpAttach(ctx, oxide.FloatingIpAttachParams{
@@ -247,7 +278,7 @@ func (r *OxideClusterReconciler) Reconcile(
 				},
 			})
 			if err != nil {
-				return ctrl.Result{}, err
+				return err
 			}
 			break
 		}
@@ -271,7 +302,7 @@ func (r *OxideClusterReconciler) Reconcile(
 		})
 	}
 
-	return ctrl.Result{}, nil
+	return nil
 }
 
 // floatingIPAllocator builds an oxide.Allocator to provision the floating IP address:
@@ -365,11 +396,21 @@ func (r *OxideClusterReconciler) ensureFloatingIPDeleted(
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *OxideClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	log := mgr.GetLogger().WithValues("controller", "oxidecluster")
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&infrav1.OxideCluster{}).
 		Watches(&infrav1.OxideMachine{}, handler.EnqueueRequestsFromMapFunc(
 			r.oxideMachineToOxideCluster,
 		)).
+		// Reconcile on Cluster pause transitions, e.g. to resume after a clusterctl move unpauses.
+		Watches(&clusterv1.Cluster{}, handler.EnqueueRequestsFromMapFunc(
+			util.ClusterToInfrastructureMapFunc(
+				context.Background(),
+				infrav1.GroupVersion.WithKind("OxideCluster"),
+				mgr.GetClient(),
+				&infrav1.OxideCluster{},
+			),
+		), builder.WithPredicates(predicates.ClusterPausedTransitions(mgr.GetScheme(), log))).
 		Named("oxidecluster").
 		Complete(r)
 }

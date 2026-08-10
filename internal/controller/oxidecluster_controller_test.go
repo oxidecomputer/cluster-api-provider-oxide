@@ -18,16 +18,25 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
+	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
+	"sigs.k8s.io/cluster-api/util/conditions"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	infrav1 "github.com/oxidecomputer/cluster-api-provider-oxide/api/v1alpha1"
+	"github.com/oxidecomputer/cluster-api-provider-oxide/internal/cloud"
 	"github.com/oxidecomputer/cluster-api-provider-oxide/internal/cloud/mock"
 	"github.com/oxidecomputer/oxide.go/oxide"
-	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 )
 
 // httpErr constructs an *oxide.HTTPError with a stub HTTPResponse so that its
@@ -37,6 +46,93 @@ func httpErr(code string) *oxide.HTTPError {
 		ErrorResponse: &oxide.ErrorResponse{ErrorCode: code},
 		HTTPResponse:  &http.Response{Request: &http.Request{}},
 	}
+}
+
+// newPauseTestScheme builds a scheme with the CAPI and Oxide types registered.
+func newPauseTestScheme(t *testing.T) *runtime.Scheme {
+	t.Helper()
+	scheme := runtime.NewScheme()
+	require.NoError(t, clusterv1.AddToScheme(scheme))
+	require.NoError(t, infrav1.AddToScheme(scheme))
+	return scheme
+}
+
+// getPausedCondition re-fetches obj and returns its Paused condition, or nil if unset.
+func getPausedCondition(t *testing.T, c client.Client, obj interface {
+	client.Object
+	conditions.Getter
+}) *metav1.Condition {
+	t.Helper()
+	if err := c.Get(context.Background(), client.ObjectKeyFromObject(obj), obj); err != nil {
+		t.Fatalf("getting %T: %v", obj, err)
+	}
+	return conditions.Get(obj, clusterv1.PausedCondition)
+}
+
+func TestOxideClusterReconcilePaused(t *testing.T) {
+	scheme := newPauseTestScheme(t)
+	cluster := &clusterv1.Cluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default"},
+		Spec:       clusterv1.ClusterSpec{Paused: new(true)},
+	}
+	oxideCluster := &infrav1.OxideCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test",
+			Namespace: "default",
+			OwnerReferences: []metav1.OwnerReference{{
+				APIVersion: clusterv1.GroupVersion.String(),
+				Kind:       "Cluster",
+				Name:       "test",
+				UID:        "test-uid",
+			}},
+		},
+	}
+	k8sClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(cluster, oxideCluster).
+		WithStatusSubresource(&infrav1.OxideCluster{}).
+		Build()
+
+	factoryCalls := 0
+	r := &OxideClusterReconciler{
+		Client: k8sClient,
+		Scheme: scheme,
+		OxideClientFactory: func(context.Context, client.Client, *infrav1.OxideCluster) (cloud.OxideClient, error) {
+			factoryCalls++
+			return nil, errors.New("halting test reconcile")
+		},
+	}
+	ctx := context.Background()
+	req := ctrl.Request{NamespacedName: types.NamespacedName{Namespace: "default", Name: "test"}}
+
+	// While paused, the first reconcile sets the Paused condition and requeues, and subsequent
+	// reconciles skip. The Oxide client must never be constructed.
+	for range 2 {
+		result, err := r.Reconcile(ctx, req)
+		require.NoError(t, err)
+		require.Equal(t, ctrl.Result{}, result)
+	}
+	require.Equal(t, 0, factoryCalls)
+	cond := getPausedCondition(t, k8sClient, oxideCluster)
+	require.NotNil(t, cond)
+	require.Equal(t, metav1.ConditionTrue, cond.Status)
+
+	// Unpause the Cluster. The next reconcile only flips the Paused condition; the one after
+	// resumes normal reconciliation and constructs the Oxide client.
+	require.NoError(t, k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), cluster))
+	cluster.Spec.Paused = new(false)
+	require.NoError(t, k8sClient.Update(ctx, cluster))
+
+	_, err := r.Reconcile(ctx, req)
+	require.NoError(t, err)
+	require.Equal(t, 0, factoryCalls)
+	cond = getPausedCondition(t, k8sClient, oxideCluster)
+	require.NotNil(t, cond)
+	require.Equal(t, metav1.ConditionFalse, cond.Status)
+
+	_, err = r.Reconcile(ctx, req)
+	require.ErrorContains(t, err, "halting test reconcile")
+	require.Equal(t, 1, factoryCalls)
 }
 
 func TestEnsureFloatingIPExists(t *testing.T) {
@@ -96,11 +192,11 @@ func TestEnsureFloatingIPExists(t *testing.T) {
 				"ip-name",
 			)
 			if tc.wantErr != "" {
-				assert.ErrorContains(t, gotErr, tc.wantErr)
-				assert.Nil(t, gotIP)
+				require.ErrorContains(t, gotErr, tc.wantErr)
+				require.Nil(t, gotIP)
 			} else {
-				assert.NoError(t, gotErr)
-				assert.Equal(t, wantIP, gotIP)
+				require.NoError(t, gotErr)
+				require.Equal(t, wantIP, gotIP)
 			}
 		})
 	}
@@ -145,9 +241,9 @@ func TestEnsureFloatingIPDeleted(t *testing.T) {
 				"ip-name",
 			)
 			if tc.wantErr != "" {
-				assert.ErrorContains(t, gotErr, tc.wantErr)
+				require.ErrorContains(t, gotErr, tc.wantErr)
 			} else {
-				assert.NoError(t, gotErr)
+				require.NoError(t, gotErr)
 			}
 		})
 	}
@@ -224,7 +320,7 @@ func TestFloatingIPAllocator(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got := floatingIPAllocator(tc.cluster)
-			assert.Equal(t, tc.want, got)
+			require.Equal(t, tc.want, got)
 		})
 	}
 }
