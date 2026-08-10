@@ -22,7 +22,7 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -52,8 +52,8 @@ func httpErr(code string) *oxide.HTTPError {
 func newPauseTestScheme(t *testing.T) *runtime.Scheme {
 	t.Helper()
 	scheme := runtime.NewScheme()
-	assert.NoError(t, clusterv1.AddToScheme(scheme))
-	assert.NoError(t, infrav1.AddToScheme(scheme))
+	require.NoError(t, clusterv1.AddToScheme(scheme))
+	require.NoError(t, infrav1.AddToScheme(scheme))
 	return scheme
 }
 
@@ -109,30 +109,30 @@ func TestOxideClusterReconcilePaused(t *testing.T) {
 	// reconciles skip. The Oxide client must never be constructed.
 	for range 2 {
 		result, err := r.Reconcile(ctx, req)
-		assert.NoError(t, err)
-		assert.Equal(t, ctrl.Result{}, result)
+		require.NoError(t, err)
+		require.Equal(t, ctrl.Result{}, result)
 	}
-	assert.Equal(t, 0, factoryCalls)
-	if cond := getPausedCondition(t, k8sClient, oxideCluster); assert.NotNil(t, cond) {
-		assert.Equal(t, metav1.ConditionTrue, cond.Status)
-	}
+	require.Equal(t, 0, factoryCalls)
+	cond := getPausedCondition(t, k8sClient, oxideCluster)
+	require.NotNil(t, cond)
+	require.Equal(t, metav1.ConditionTrue, cond.Status)
 
 	// Unpause the Cluster. The next reconcile only flips the Paused condition; the one after
 	// resumes normal reconciliation and constructs the Oxide client.
-	assert.NoError(t, k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), cluster))
+	require.NoError(t, k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), cluster))
 	cluster.Spec.Paused = new(false)
-	assert.NoError(t, k8sClient.Update(ctx, cluster))
+	require.NoError(t, k8sClient.Update(ctx, cluster))
 
 	_, err := r.Reconcile(ctx, req)
-	assert.NoError(t, err)
-	assert.Equal(t, 0, factoryCalls)
-	if cond := getPausedCondition(t, k8sClient, oxideCluster); assert.NotNil(t, cond) {
-		assert.Equal(t, metav1.ConditionFalse, cond.Status)
-	}
+	require.NoError(t, err)
+	require.Equal(t, 0, factoryCalls)
+	cond = getPausedCondition(t, k8sClient, oxideCluster)
+	require.NotNil(t, cond)
+	require.Equal(t, metav1.ConditionFalse, cond.Status)
 
 	_, err = r.Reconcile(ctx, req)
-	assert.ErrorContains(t, err, "halting test reconcile")
-	assert.Equal(t, 1, factoryCalls)
+	require.ErrorContains(t, err, "halting test reconcile")
+	require.Equal(t, 1, factoryCalls)
 }
 
 func TestEnsureFloatingIPExists(t *testing.T) {
@@ -192,11 +192,11 @@ func TestEnsureFloatingIPExists(t *testing.T) {
 				"ip-name",
 			)
 			if tc.wantErr != "" {
-				assert.ErrorContains(t, gotErr, tc.wantErr)
-				assert.Nil(t, gotIP)
+				require.ErrorContains(t, gotErr, tc.wantErr)
+				require.Nil(t, gotIP)
 			} else {
-				assert.NoError(t, gotErr)
-				assert.Equal(t, wantIP, gotIP)
+				require.NoError(t, gotErr)
+				require.Equal(t, wantIP, gotIP)
 			}
 		})
 	}
@@ -241,9 +241,9 @@ func TestEnsureFloatingIPDeleted(t *testing.T) {
 				"ip-name",
 			)
 			if tc.wantErr != "" {
-				assert.ErrorContains(t, gotErr, tc.wantErr)
+				require.ErrorContains(t, gotErr, tc.wantErr)
 			} else {
-				assert.NoError(t, gotErr)
+				require.NoError(t, gotErr)
 			}
 		})
 	}
@@ -320,7 +320,7 @@ func TestFloatingIPAllocator(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got := floatingIPAllocator(tc.cluster)
-			assert.Equal(t, tc.want, got)
+			require.Equal(t, tc.want, got)
 		})
 	}
 }
