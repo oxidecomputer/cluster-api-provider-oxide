@@ -4,10 +4,10 @@ go 1.26.4
 
 require (
 	github.com/google/uuid v1.6.0
-	github.com/onsi/ginkgo/v2 v2.32.0
+	github.com/onsi/ginkgo/v2 v2.32.1
 	github.com/onsi/gomega v1.42.1
 	github.com/oxidecomputer/oxide.go v0.10.0
-	github.com/stretchr/testify v1.11.1
+	github.com/stretchr/testify v1.12.0
 	go.uber.org/mock v0.6.0
 	k8s.io/api v0.36.3
 	k8s.io/apimachinery v0.36.3
