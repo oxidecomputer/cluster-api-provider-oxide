@@ -38,3 +38,5 @@ out/
 
 # Generated K8s manifest from the helm chart
 tests/e2e/data/capox/capox.yaml
+# Downloaded from the CAPI release pinned in tests/e2e/config/oxide.yaml
+tests/e2e/data/shared/capi/metadata.yaml
