@@ -1,11 +1,11 @@
 variables:
-  KUBERNETES_VERSION: "v1.36.1"
+  KUBERNETES_VERSION: "v1.36.6"
   CONTROL_PLANE_MACHINE_COUNT: "1"
   WORKER_MACHINE_COUNT: "0"
   OXIDE_PROJECT: "cluster-api-provider-oxide"
   OXIDE_VPC: "default"
   OXIDE_SUBNET: "default"
-  OXIDE_IMAGE_ID: "dc2a71b6-4a5a-4325-8b30-eba975108aa2"
+  OXIDE_IMAGE_ID: "a6d8efd7-ad86-4ef8-8589-43648f1b9675"
   CNI: "./data/cni/calico.yaml"
   CCM: "./data/ccm/oxide-ccm.yaml"
   CCM_SECRET: "./data/ccm/oxide-ccm-secret.yaml"
@@ -14,8 +14,8 @@ providers:
 - name: cluster-api
   type: CoreProvider
   versions:
-  - name: v1.11.0
-    value: https://github.com/kubernetes-sigs/cluster-api/releases/download/v1.11.0/core-components.yaml
+  - name: v1.14.3
+    value: https://github.com/kubernetes-sigs/cluster-api/releases/download/v1.14.3/core-components.yaml
     type: url
     contract: v1beta2
     files:
@@ -24,8 +24,8 @@ providers:
 - name: kubeadm
   type: BootstrapProvider
   versions:
-  - name: v1.11.0
-    value: https://github.com/kubernetes-sigs/cluster-api/releases/download/v1.11.0/bootstrap-components.yaml
+  - name: v1.14.3
+    value: https://github.com/kubernetes-sigs/cluster-api/releases/download/v1.14.3/bootstrap-components.yaml
     type: url
     contract: v1beta2
     files:
@@ -34,8 +34,8 @@ providers:
 - name: kubeadm
   type: ControlPlaneProvider
   versions:
-  - name: v1.11.0
-    value: https://github.com/kubernetes-sigs/cluster-api/releases/download/v1.11.0/control-plane-components.yaml
+  - name: v1.14.3
+    value: https://github.com/kubernetes-sigs/cluster-api/releases/download/v1.14.3/control-plane-components.yaml
     type: url
     contract: v1beta2
     files:

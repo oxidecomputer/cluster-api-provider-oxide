@@ -15,7 +15,7 @@ MAKEFILE_PATH := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 TOOLS_MOD := $(MAKEFILE_PATH)/tools/go.mod
 GO_TOOL := go tool -modfile=$(TOOLS_MOD)
 NAMESPACE ?= capox-system
-HELM_VERSION ?= v4.2.2
+HELM_VERSION ?= v4.3.1
 # CAPI contract version implemented by the provider; stamped on every release
 # series entry when hack/gen-capi-metadata.sh generates metadata.yaml. Bump it
 # (and add a series boundary in the script) when migrating to a new contract.
@@ -92,6 +92,11 @@ precommit: fix verify test release-snapshot ## Run all precommit checks (lint, f
 
 KIND_CLUSTER_NAME ?= capox-e2e
 ARTIFACTS    ?= $(PWD)/_artifacts
+E2E_CONFIG   ?= $(PWD)/tests/e2e/config/oxide.yaml
+# clusterctl resolves "latest" to the newest release series in metadata.yaml
+# that matches its contract, so the metadata must come from the same CAPI
+# release the e2e config pins.
+CAPI_VERSION ?= $(shell grep -o "cluster-api/releases/download/v[^/]*" $(E2E_CONFIG) | head -1 | cut -d/ -f4)
 
 .PHONY: setup-test-e2e
 setup-test-e2e:
@@ -104,29 +109,38 @@ setup-test-e2e:
 	esac
 
 .PHONY: test-e2e
-test-e2e: generate tools setup-test-e2e render-e2e-ccm render-e2e-capox ## Run e2e tests on a local KinD cluster
+test-e2e: generate tools setup-test-e2e render-e2e-capi render-e2e-ccm render-e2e-capox ## Run e2e tests on a local KinD cluster
 	@mkdir -p $(ARTIFACTS)
+# clusterctl picks the highest version dir as "latest"; a stale dir from an
+# earlier run would shadow the freshly rendered one.
+	rm -rf $(ARTIFACTS)/repository
 	$(KIND) get kubeconfig --name $(KIND_CLUSTER_NAME) > $(ARTIFACTS)/kubeconfig
 
 # Tear down the Kind cluster only if the tests pass; on failure, leave
 # everything in place for debugging.
 	KUBECONFIG=$(ARTIFACTS)/kubeconfig \
 		go test ./tests/e2e/ -timeout 30m -v -args \
-		  -e2e.config=$(PWD)/tests/e2e/config/oxide.yaml \
+		  -e2e.config=$(E2E_CONFIG) \
 		  -e2e.artifacts-folder=$(ARTIFACTS) \
 		  -ginkgo.v \
 	&& $(MAKE) cleanup-test-e2e
 
 .PHONY: cleanup-test-e2e
 cleanup-test-e2e: ## Tear down the Kind cluster used for e2e tests
-	$(KIND) get kubeconfig --name $(KIND_CLUSTER_NAME) > $(ARTIFACTS)/kubeconfig
-	KUBECONFIG=$(ARTIFACTS)/kubeconfig $(KUBECTL) delete crd clusters.cluster.x-k8s.io --timeout=30s
-	@$(KIND) delete cluster --name $(KIND_CLUSTER_NAME)
+	-$(KIND) get kubeconfig --name $(KIND_CLUSTER_NAME) > $(ARTIFACTS)/kubeconfig
+	-KUBECONFIG=$(ARTIFACTS)/kubeconfig $(KUBECTL) delete crd clusters.cluster.x-k8s.io --ignore-not-found --timeout=30s
+	-$(KIND) delete cluster --name $(KIND_CLUSTER_NAME)
 
 CCM_RELEASE ?= ccm
 # Leave CCM_VERSION empty to let Helm resolve the latest published chart;
 # set it (e.g. CCM_VERSION=0.7.0) to pin a specific version.
 CCM_VERSION ?=
+
+.PHONY: render-e2e-capi
+render-e2e-capi:
+	@mkdir -p tests/e2e/data/shared/capi
+	curl -fsSL -o tests/e2e/data/shared/capi/metadata.yaml \
+	  https://github.com/kubernetes-sigs/cluster-api/releases/download/$(CAPI_VERSION)/metadata.yaml
 
 .PHONY: render-e2e-ccm
 render-e2e-ccm:
@@ -223,6 +237,7 @@ build: generate ## Builds a container image using ko and pushes to $KO_DOCKER_RE
 	$(KO) build ./cmd | tee $(IMAGE_REF_FILE)
 
 .PHONY: build-kind
+KIND_PLATFORM ?= $(shell docker version -f '{{.Server.Os}}/{{.Server.Arch}}')
 build-kind:
 	# A KO_DOCKER_REPO under kind.local selects ko's kind publisher, which writes
 	# the image straight into the kind nodes -- no docker daemon or `kind load`
@@ -231,9 +246,10 @@ build-kind:
 	# path component ("/...") or containerd normalizes the name and ko's tagging
 	# step fails. ko tags the image <repo>:<digest-hex> and prints that ref;
 	# capture it so downstream targets deploy the exact image just built
-	# (pullPolicy must not be Always).
+	# (pullPolicy must not be Always). ko defaults to linux/amd64; build for
+	# the daemon's platform so the binary runs natively on the kind nodes.
 	KO_DOCKER_REPO=kind.local/cluster-api-provider-oxide KIND_CLUSTER_NAME=$(KIND_CLUSTER_NAME) \
-		$(KO) build --bare ./cmd | tee $(IMAGE_REF_FILE)
+		$(KO) build --bare --platform=$(KIND_PLATFORM) ./cmd | tee $(IMAGE_REF_FILE)
 
 .PHONY: run
 run: generate ## Run a controller from your host.
