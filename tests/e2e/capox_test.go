@@ -8,7 +8,6 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/cluster-api/test/framework"
 	"sigs.k8s.io/cluster-api/test/framework/clusterctl"
@@ -25,9 +24,7 @@ var _ = Describe("capox", func() {
 
 	BeforeEach(func() {
 		namespace = &corev1.Namespace{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: fmt.Sprintf("%s-%s", specName, util.RandomString(6)),
-			},
+			Name: fmt.Sprintf("%s-%s", specName, util.RandomString(6)),
 		}
 		Expect(bootstrapClusterProxy.GetClient().Create(ctx, namespace)).To(Succeed())
 		clusterName = fmt.Sprintf("%s-%s", specName, util.RandomString(6))
@@ -38,10 +35,8 @@ var _ = Describe("capox", func() {
 		Expect(host).NotTo(BeEmpty(), "OXIDE_HOST must be set")
 		Expect(token).NotTo(BeEmpty(), "OXIDE_TOKEN must be set")
 		Expect(bootstrapClusterProxy.GetClient().Create(ctx, &corev1.Secret{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "oxide-credentials",
-				Namespace: namespace.Name,
-			},
+			Name:      "oxide-credentials",
+			Namespace: namespace.Name,
 			StringData: map[string]string{
 				"oxide-host":  host,
 				"oxide-token": token,
