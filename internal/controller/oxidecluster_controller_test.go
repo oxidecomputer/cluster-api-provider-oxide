@@ -26,7 +26,6 @@ import (
 	"go.uber.org/mock/gomock"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/cluster-api/util/conditions"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -72,20 +71,18 @@ func getPausedCondition(t *testing.T, c client.Client, obj interface {
 func TestOxideClusterReconcilePaused(t *testing.T) {
 	scheme := newPauseTestScheme(t)
 	cluster := &clusterv1.Cluster{
-		ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default"},
-		Spec:       clusterv1.ClusterSpec{Paused: new(true)},
+		Name: "test", Namespace: "default",
+		Spec: clusterv1.ClusterSpec{Paused: new(true)},
 	}
 	oxideCluster := &infrav1.OxideCluster{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "test",
-			Namespace: "default",
-			OwnerReferences: []metav1.OwnerReference{{
-				APIVersion: clusterv1.GroupVersion.String(),
-				Kind:       "Cluster",
-				Name:       "test",
-				UID:        "test-uid",
-			}},
-		},
+		Name:      "test",
+		Namespace: "default",
+		OwnerReferences: []metav1.OwnerReference{{
+			APIVersion: clusterv1.GroupVersion.String(),
+			Kind:       "Cluster",
+			Name:       "test",
+			UID:        "test-uid",
+		}},
 	}
 	k8sClient := fake.NewClientBuilder().
 		WithScheme(scheme).
@@ -103,7 +100,7 @@ func TestOxideClusterReconcilePaused(t *testing.T) {
 		},
 	}
 	ctx := context.Background()
-	req := ctrl.Request{NamespacedName: types.NamespacedName{Namespace: "default", Name: "test"}}
+	req := ctrl.Request{Namespace: "default", Name: "test"}
 
 	// While paused, the first reconcile sets the Paused condition and requeues, and subsequent
 	// reconciles skip. The Oxide client must never be constructed.

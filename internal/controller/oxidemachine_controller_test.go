@@ -25,7 +25,6 @@ import (
 	"go.uber.org/mock/gomock"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -40,30 +39,26 @@ import (
 func TestOxideMachineReconcilePaused(t *testing.T) {
 	scheme := newPauseTestScheme(t)
 	cluster := &clusterv1.Cluster{
-		ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default"},
-		Spec:       clusterv1.ClusterSpec{Paused: new(true)},
+		Name: "test", Namespace: "default",
+		Spec: clusterv1.ClusterSpec{Paused: new(true)},
 	}
 	oxideCluster := &infrav1.OxideCluster{
-		ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default"},
+		Name: "test", Namespace: "default",
 	}
 	machine := &clusterv1.Machine{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "test-machine",
-			Namespace: "default",
-			Labels:    map[string]string{clusterv1.ClusterNameLabel: "test"},
-		},
+		Name:      "test-machine",
+		Namespace: "default",
+		Labels:    map[string]string{clusterv1.ClusterNameLabel: "test"},
 	}
 	oxideMachine := &infrav1.OxideMachine{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "test-machine",
-			Namespace: "default",
-			OwnerReferences: []metav1.OwnerReference{{
-				APIVersion: clusterv1.GroupVersion.String(),
-				Kind:       "Machine",
-				Name:       "test-machine",
-				UID:        "test-machine-uid",
-			}},
-		},
+		Name:      "test-machine",
+		Namespace: "default",
+		OwnerReferences: []metav1.OwnerReference{{
+			APIVersion: clusterv1.GroupVersion.String(),
+			Kind:       "Machine",
+			Name:       "test-machine",
+			UID:        "test-machine-uid",
+		}},
 	}
 	k8sClient := fake.NewClientBuilder().
 		WithScheme(scheme).
@@ -82,7 +77,7 @@ func TestOxideMachineReconcilePaused(t *testing.T) {
 	}
 	ctx := context.Background()
 	req := ctrl.Request{
-		NamespacedName: types.NamespacedName{Namespace: "default", Name: "test-machine"},
+		Namespace: "default", Name: "test-machine",
 	}
 
 	// While paused, the first reconcile sets the Paused condition and requeues, and subsequent
@@ -458,10 +453,8 @@ func TestDisksFromOxideMachine(t *testing.T) {
 				},
 			},
 		},
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "machine",
-			Namespace: "default",
-		},
+		Name:      "machine",
+		Namespace: "default",
 	}
 	got := disksFromOxideMachine(machine)
 	want := []oxide.InstanceDiskAttachment{
