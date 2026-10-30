@@ -71,6 +71,10 @@ checksum:
 # Makefile release targets generate it at _artifacts/metadata.yaml before
 # invoking goreleaser.
 release:
+  # Set explicitly so `goreleaser check` doesn't need an `origin` remote.
+  github:
+    owner: oxidecomputer
+    name: cluster-api-provider-oxide
   extra_files:
     - glob: ./_artifacts/infrastructure-components.yaml
     - glob: ./_artifacts/metadata.yaml
