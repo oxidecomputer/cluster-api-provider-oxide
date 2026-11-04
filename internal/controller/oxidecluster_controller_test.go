@@ -321,3 +321,143 @@ func TestFloatingIPAllocator(t *testing.T) {
 		})
 	}
 }
+
+func TestReconcileFloatingIPAttachment(t *testing.T) {
+	const (
+		oldID = "11111111-1111-1111-1111-111111111111"
+		newID = "22222222-2222-2222-2222-222222222222"
+		other = "33333333-3333-3333-3333-333333333333"
+	)
+	now := metav1.Now()
+	machine := func(name, instanceID string, provisioned, deleting bool) *infrav1.OxideMachine {
+		m := &infrav1.OxideMachine{
+			Name:      name,
+			Namespace: "default",
+			Labels: map[string]string{
+				clusterv1.ClusterNameLabel:         "test",
+				clusterv1.MachineControlPlaneLabel: "",
+			},
+			Spec: infrav1.OxideMachineSpec{ProviderID: "oxide://" + instanceID},
+			Status: infrav1.OxideMachineStatus{
+				Initialization: infrav1.OxideMachineInitializationStatus{Provisioned: &provisioned},
+			},
+		}
+		if deleting {
+			m.DeletionTimestamp = &now
+			m.Finalizers = []string{"test"}
+		}
+		return m
+	}
+	attached := func(instanceID string) *oxide.FloatingIp {
+		return &oxide.FloatingIp{Id: "ip-id", Ip: "10.0.0.1", InstanceId: instanceID}
+	}
+	expectMove := func(m *mock.MockOxideClient, from, to string) {
+		if from != "" {
+			m.EXPECT().
+				FloatingIpDetach(gomock.Any(), oxide.FloatingIpDetachParams{FloatingIp: "ip-id"}).
+				Return(attached(""), nil)
+		}
+		m.EXPECT().FloatingIpAttach(gomock.Any(), oxide.FloatingIpAttachParams{
+			FloatingIp: "ip-id",
+			Body: &oxide.FloatingIpAttach{
+				Kind:   oxide.FloatingIpParentKindInstance,
+				Parent: oxide.NameOrId(to),
+			},
+		}).Return(attached(to), nil)
+	}
+
+	tests := []struct {
+		name         string
+		machines     []*infrav1.OxideMachine
+		ip           *oxide.FloatingIp
+		setup        func(*mock.MockOxideClient)
+		wantAttached bool
+	}{
+		{
+			name: "attached to a live control plane machine is left alone",
+			machines: []*infrav1.OxideMachine{
+				machine("old", oldID, true, false),
+				machine("new", newID, true, false),
+			},
+			ip:           attached(oldID),
+			setup:        func(*mock.MockOxideClient) {},
+			wantAttached: true,
+		},
+		{
+			name: "attached to a deleting machine moves to a live one",
+			machines: []*infrav1.OxideMachine{
+				machine("old", oldID, true, true),
+				machine("new", newID, true, false),
+			},
+			ip:           attached(oldID),
+			setup:        func(m *mock.MockOxideClient) { expectMove(m, oldID, newID) },
+			wantAttached: true,
+		},
+		{
+			name: "attached to a deleting machine stays when nothing else is ready",
+			machines: []*infrav1.OxideMachine{
+				machine("old", oldID, true, true),
+				machine("new", newID, false, false),
+			},
+			ip:           attached(oldID),
+			setup:        func(*mock.MockOxideClient) {},
+			wantAttached: true,
+		},
+		{
+			name: "unattached attaches to the first live machine",
+			machines: []*infrav1.OxideMachine{
+				machine("old", oldID, true, true),
+				machine("new", newID, true, false),
+			},
+			ip:           attached(""),
+			setup:        func(m *mock.MockOxideClient) { expectMove(m, "", newID) },
+			wantAttached: true,
+		},
+		{
+			name:         "attached to a foreign instance is moved",
+			machines:     []*infrav1.OxideMachine{machine("new", newID, true, false)},
+			ip:           attached(other),
+			setup:        func(m *mock.MockOxideClient) { expectMove(m, other, newID) },
+			wantAttached: true,
+		},
+		{
+			name:         "unattached with no ready machine stays unattached",
+			machines:     []*infrav1.OxideMachine{machine("new", newID, false, false)},
+			ip:           attached(""),
+			setup:        func(*mock.MockOxideClient) {},
+			wantAttached: false,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			scheme := newPauseTestScheme(t)
+			objs := make([]client.Object, 0, len(tc.machines))
+			for _, m := range tc.machines {
+				objs = append(objs, m)
+			}
+			k8sClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(objs...).Build()
+			oxideClient := mock.NewMockOxideClient(gomock.NewController(t))
+			tc.setup(oxideClient)
+
+			oxideCluster := &infrav1.OxideCluster{Name: "test", Namespace: "default"}
+			r := OxideClusterReconciler{Client: k8sClient, Scheme: scheme}
+			require.NoError(
+				t,
+				r.reconcileFloatingIPAttachment(
+					context.Background(),
+					oxideClient,
+					oxideCluster,
+					tc.ip,
+				),
+			)
+
+			cond := conditions.Get(oxideCluster, infrav1.FloatingIPAttachedCondition)
+			require.NotNil(t, cond)
+			if tc.wantAttached {
+				require.Equal(t, metav1.ConditionTrue, cond.Status)
+			} else {
+				require.Equal(t, metav1.ConditionFalse, cond.Status)
+			}
+		})
+	}
+}
