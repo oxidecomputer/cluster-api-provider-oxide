@@ -173,7 +173,8 @@ func (r *OxideClusterReconciler) Reconcile(
 }
 
 // reconcileFloatingIPAttachment ensures the floating IP is attached to a provisioned control plane
-// instance, using the 0th ready one if unattached, and sets the FloatingIPAttached condition.
+// instance that isn't being deleted, using the 0th ready one if it needs to move, and sets the
+// FloatingIPAttached condition.
 func (r *OxideClusterReconciler) reconcileFloatingIPAttachment(
 	ctx context.Context,
 	oxideClient cloud.OxideClient,
@@ -182,11 +183,7 @@ func (r *OxideClusterReconciler) reconcileFloatingIPAttachment(
 ) error {
 	log := logf.FromContext(ctx)
 
-	shouldAttach := true
 	var machines infrav1.OxideMachineList
-
-	// If the floating IP is attached, check whether it's attached to one of the control plane
-	// machines in the current cluster.
 	if err := r.List(
 		ctx,
 		&machines,
@@ -198,23 +195,74 @@ func (r *OxideClusterReconciler) reconcileFloatingIPAttachment(
 	); err != nil {
 		return fmt.Errorf("listing oxide machines: %w", err)
 	}
+
+	// Candidate target: the first provisioned control plane machine that isn't being deleted.
+	var targetInstanceID string
+	var skipped []string
+	for _, machine := range machines.Items {
+		if machine.Spec.ProviderID == "" {
+			skipped = append(skipped, machine.Name+": missing providerID")
+			continue
+		}
+		provisioned := machine.Status.Initialization.Provisioned
+		if provisioned == nil || !*provisioned {
+			skipped = append(skipped, machine.Name+": not provisioned")
+			continue
+		}
+		if !machine.DeletionTimestamp.IsZero() {
+			skipped = append(skipped, machine.Name+": being deleted")
+			continue
+		}
+		instanceID, err := cloud.InstanceIDFromProviderID(machine.Spec.ProviderID)
+		if err != nil {
+			return fmt.Errorf("parsing provider id: %w", err)
+		}
+		targetInstanceID = instanceID
+		break
+	}
+
+	// If the floating IP is attached, check whether its holder is one of this cluster's control
+	// plane machines, and whether that holder is being deleted.
+	shouldAttach := true
 	if ip.InstanceId != "" {
 		for _, machine := range machines.Items {
-			if machine.Spec.ProviderID != "" {
-				instanceID, err := cloud.InstanceIDFromProviderID(machine.Spec.ProviderID)
-				if err != nil {
-					return fmt.Errorf("parsing provider id: %w", err)
-				}
-				if instanceID == ip.InstanceId {
-					shouldAttach = false
-					break
-				}
+			if machine.Spec.ProviderID == "" {
+				continue
 			}
+			instanceID, err := cloud.InstanceIDFromProviderID(machine.Spec.ProviderID)
+			if err != nil {
+				return fmt.Errorf("parsing provider id: %w", err)
+			}
+			if instanceID != ip.InstanceId {
+				continue
+			}
+			shouldAttach = false
+			// KCP removes the holder's etcd member and apiserver before its instance goes away,
+			// and everything reaches the apiserver through this IP. Move it off a deleting holder
+			// ahead of time, but only when there's somewhere to move it: an unattached IP is
+			// worse than one on a node that's still draining.
+			if !machine.DeletionTimestamp.IsZero() && targetInstanceID != "" {
+				log.Info(
+					"floating ip holder is being deleted; moving",
+					"ip",
+					ip.Ip,
+					"instance",
+					ip.InstanceId,
+				)
+				shouldAttach = true
+			}
+			break
 		}
 	}
 
 	if shouldAttach {
-		log.Info("finding an instance for floating ip attachment", "ip", ip.Ip)
+		log.Info(
+			"finding an instance for floating ip attachment",
+			"ip",
+			ip.Ip,
+			"skipped",
+			skipped,
+		)
 
 		// If the floating IP is already attached, detach it. This is arguably out of scope for the
 		// reconciler, since it's not our responsibility to handle out-of-band changes to the
@@ -237,49 +285,19 @@ func (r *OxideClusterReconciler) reconcileFloatingIPAttachment(
 			}
 		}
 
-		// Attach the floating IP to the 0th provisioned instance.
-		for _, machine := range machines.Items {
-			if machine.Spec.ProviderID == "" {
-				log.Info(
-					"skipping floating IP attachment to machine due to missing providerID",
-					"machine",
-					machine.Name,
-				)
-				continue
-			}
-			provisioned := machine.Status.Initialization.Provisioned
-			if provisioned == nil || !*provisioned {
-				log.Info(
-					"skipping floating IP attachment to machine since it is not provisioned",
-					"machine",
-					machine.Name,
-				)
-				continue
-			}
-			if !machine.DeletionTimestamp.IsZero() {
-				log.Info(
-					"skipping floating IP attachment to machine since it is being deleted",
-					"machine",
-					machine.Name,
-				)
-				continue
-			}
-			instanceID, err := cloud.InstanceIDFromProviderID(machine.Spec.ProviderID)
-			if err != nil {
-				return fmt.Errorf("parsing provider id: %w", err)
-			}
-			log.Info("attaching floating IP", "ip", ip.Ip, "instance", instanceID)
+		if targetInstanceID != "" {
+			log.Info("attaching floating IP", "ip", ip.Ip, "instance", targetInstanceID)
+			var err error
 			ip, err = oxideClient.FloatingIpAttach(ctx, oxide.FloatingIpAttachParams{
 				FloatingIp: oxide.NameOrId(ip.Id),
 				Body: &oxide.FloatingIpAttach{
 					Kind:   oxide.FloatingIpParentKindInstance,
-					Parent: oxide.NameOrId(instanceID),
+					Parent: oxide.NameOrId(targetInstanceID),
 				},
 			})
 			if err != nil {
 				return err
 			}
-			break
 		}
 	}
 
