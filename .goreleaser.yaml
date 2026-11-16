@@ -1,7 +1,7 @@
 # GoReleaser configuration.
 # Cuts a GitHub release and publishes multi-arch (linux/amd64,linux/arm64)
 # container images to the ghcr repo. Runs in CI only; see
-# .github/workflows/release.yml. Test locally with `make release-snapshot`.
+# .github/workflows/release.yml. Test locally with `make release-dry-run`.
 #
 # Docs: https://goreleaser.com/customization/ko/
 version: 2
@@ -47,7 +47,7 @@ kos:
       - linux/arm64
     tags:
       - "{{ .Version }}"
-      - latest
+      - "{{ if not .Prerelease }}latest{{ end }}"
     # Push to the bare repo (no import-path or MD5 suffix).
     bare: true
     preserve_import_paths: false
@@ -71,6 +71,9 @@ checksum:
 # Makefile release targets generate it at _artifacts/metadata.yaml before
 # invoking goreleaser.
 release:
+  # Snapshot tags (vX.Y.Z-<suffix>) publish as prereleases; see `make snapshot-tag`.
+  prerelease: auto
+  make_latest: "{{ not .Prerelease }}"
   # Set explicitly so `goreleaser check` doesn't need an `origin` remote.
   github:
     owner: oxidecomputer

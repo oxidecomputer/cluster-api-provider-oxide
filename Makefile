@@ -1,8 +1,8 @@
 # Release version: the current git tag without the "v" prefix (v0.1.2 ->
 # 0.1.2; between tags, git describe appends -<n>-g<sha>). goreleaser overrides
 # it on the make command line (see the before hook in .goreleaser.yaml) so the
-# Makefile and goreleaser always agree on one value.
-VERSION ?= $(shell git describe --tags | sed -e 's/^v//')
+# Makefile and goreleaser always agree on one value. Snapshot tags are skipped.
+VERSION ?= $(shell git describe --tags --exclude '*-*' | sed -e 's/^v//')
 
 # Image URL to use all building/pushing image targets
 IMAGE_REPO ?= ghcr.io/oxidecomputer/cluster-api-provider-oxide
@@ -88,7 +88,7 @@ test: generate setup-envtest ## Run tests.
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" go test -v $$(go list ./... | grep -v /e2e) -coverprofile cover.out
 
 .PHONY: precommit
-precommit: fix verify test release-snapshot ## Run all precommit checks (lint, fix, fmt, local tests, local snapshot release). NOTE: does not run e2e tests
+precommit: fix verify test release-dry-run ## Run all precommit checks (lint, fix, fmt, local tests, release dry run). NOTE: does not run e2e tests
 
 KIND_CLUSTER_NAME ?= capox-e2e
 ARTIFACTS    ?= $(PWD)/_artifacts
@@ -358,17 +358,28 @@ ci-verify: precommit ## Verify fmt, linters, mod/sum files, etc. and fail if any
 release-check: tools
 	$(GORELEASER) check
 
-.PHONY: release-snapshot
-release-snapshot: tools ## Build the release artifacts locally without publishing (images go to a local registry).
+.PHONY: release-dry-run
+release-dry-run: tools ## Build the release artifacts locally without publishing (images go to a local registry).
 	# The snapshot version exercises the script's <version> argument the same
 	# way a real release does.
-	hack/gen-capi-metadata.sh --contract $(CAPI_CONTRACT) -o $(ARTIFACTS)/metadata.yaml "$$(git describe --tags --abbrev=0)-SNAPSHOT"
+	hack/gen-capi-metadata.sh --contract $(CAPI_CONTRACT) -o $(ARTIFACTS)/metadata.yaml "$$(git describe --tags --abbrev=0 --exclude '*-*')-SNAPSHOT"
 	$(GORELEASER) release --snapshot --clean
 
+.PHONY: snapshot-tag
+snapshot-tag: ## Tag HEAD as a snapshot prerelease and print the push command (see hack/snapshot-tag.sh). PR= and REMOTE= override detection.
+	@hack/snapshot-tag.sh $(if $(PR),--pr $(PR)) $(if $(REMOTE),--remote $(REMOTE))
+
+# GORELEASER_CURRENT_TAG disambiguates a commit carrying both a snapshot and a
+# stable tag. The previous tag skips snapshots so changelogs diff against the
+# last stable release.
 .PHONY: release
 release: tools ## Build and push the multi-arch (linux/amd64,linux/arm64) images to ghcr, push the helm charts, and cut a GitHub release.
-	hack/gen-capi-metadata.sh --contract $(CAPI_CONTRACT) -o $(ARTIFACTS)/metadata.yaml "$$(git describe --tags --exact-match)"
-	$(GORELEASER) release --clean
+	set -e; \
+	tag="$${GORELEASER_CURRENT_TAG:-}"; \
+	[[ -n "$$tag" ]] || tag="$$(git describe --tags --exact-match)"; \
+	prev="$$(git describe --tags --abbrev=0 --match 'v[0-9]*.[0-9]*.[0-9]*' --exclude '*-*' "$$tag^" 2>/dev/null || true)"; \
+	hack/gen-capi-metadata.sh --contract $(CAPI_CONTRACT) -o $(ARTIFACTS)/metadata.yaml "$$tag"; \
+	GORELEASER_CURRENT_TAG="$$tag" GORELEASER_PREVIOUS_TAG="$$prev" $(GORELEASER) release --clean
 	for chart in $(ARTIFACTS)/helm/*.tgz; do \
 		$(HELM) push "$$chart" "oci://$(HELM_OCI_REPO)"; \
 	done
