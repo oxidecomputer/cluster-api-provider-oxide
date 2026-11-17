@@ -1,8 +1,8 @@
 # Release version: the current git tag without the "v" prefix (v0.1.2 ->
 # 0.1.2; between tags, git describe appends -<n>-g<sha>). goreleaser overrides
 # it on the make command line (see the before hook in .goreleaser.yaml) so the
-# Makefile and goreleaser always agree on one value.
-VERSION ?= $(shell git describe --tags | sed -e 's/^v//')
+# Makefile and goreleaser always agree on one value. Snapshot tags are skipped.
+VERSION ?= $(shell git describe --tags --exclude '*-*' | sed -e 's/^v//')
 
 # Image URL to use all building/pushing image targets
 IMAGE_REPO ?= ghcr.io/oxidecomputer/cluster-api-provider-oxide
@@ -16,6 +16,7 @@ TOOLS_MOD := $(MAKEFILE_PATH)/tools/go.mod
 GO_TOOL := go tool -modfile=$(TOOLS_MOD)
 NAMESPACE ?= capox-system
 HELM_VERSION ?= v4.3.1
+SHELLCHECK_VERSION ?= v0.11.0
 # CAPI contract version implemented by the provider; stamped on every release
 # series entry when hack/gen-capi-metadata.sh generates metadata.yaml. Bump it
 # (and add a series boundary in the script) when migrating to a new contract.
@@ -38,6 +39,7 @@ CONTAINER_TOOL ?= docker
 # Options are set to exit when a recipe line exits non-zero or a piped command fails.
 SHELL = /usr/bin/env bash -o pipefail
 .SHELLFLAGS = -ec
+SHELL_SOURCES = $(shell git ls-files --cached --others --exclude-standard '*.sh')
 
 .PHONY: all
 all: precommit
@@ -71,10 +73,14 @@ generate: ## Generate code and CRDs w/ controllergen
 	$(HELM_DOCS) --chart-search-root charts/cluster-api-provider-oxide
 
 .PHONY: verify
-verify: release-check ## Run linters and vetting on codebase with no commit checks and no mutations.
+verify: release-check lint-shell ## Run linters and vetting on codebase with no commit checks and no mutations.
 	"$(GOLANGCI_LINT)" config verify
 	$(GOLANGCI_LINT) run
 	go vet ./...
+
+.PHONY: lint-shell
+lint-shell: shellcheck ## Run shellcheck over the checked-in shell scripts.
+	$(SHELLCHECK) --severity=style $(SHELL_SOURCES)
 
 .PHONY: fix
 fix: golangci-lint ## Perform lint, fmt, and mod/sum file fixes
@@ -88,7 +94,7 @@ test: generate setup-envtest ## Run tests.
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" go test -v $$(go list ./... | grep -v /e2e) -coverprofile cover.out
 
 .PHONY: precommit
-precommit: fix verify test release-snapshot ## Run all precommit checks (lint, fix, fmt, local tests, local snapshot release). NOTE: does not run e2e tests
+precommit: fix verify test release-dry-run ## Run all precommit checks (lint, fix, fmt, local tests, release dry run). NOTE: does not run e2e tests
 
 KIND_CLUSTER_NAME ?= capox-e2e
 ARTIFACTS    ?= $(PWD)/_artifacts
@@ -185,13 +191,14 @@ KIND ?= $(GO_TOOL) kind
 KO ?= KO_CACHE=$(KO_CACHE) $(GO_TOOL) ko
 KUSTOMIZE ?= $(GO_TOOL) kustomize
 GORELEASER ?= $(GO_TOOL) goreleaser
+SHELLCHECK ?= $(LOCALBIN)/shellcheck
 ENVTEST ?= go tool setup-envtest # this tool is in the main go.mod so the version stays in-sync
 GOLANGCI_LINT ?= $(LOCALBIN)/golangci-lint-custom
 HELM ?= $(LOCALBIN)/helm
 HELM_DOCS ?= $(GO_TOOL) helm-docs
 
 .PHONY: tools
-tools: kubectl helm $(LOCALBIN) setup-envtest golangci-lint ## Install all required dev tools to the repo's local bin/
+tools: kubectl helm shellcheck $(LOCALBIN) setup-envtest golangci-lint ## Install all required dev tools to the repo's local bin/
 	GOBIN="$(LOCALBIN)" go install -modfile=$(TOOLS_MOD) tool
 
 .PHONY: kubectl
@@ -206,6 +213,12 @@ helm: $(LOCALBIN)
 	curl -fsSL -o $(LOCALBIN)/get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-4
 	chmod 700 $(LOCALBIN)/get_helm.sh
 	HELM_INSTALL_DIR=$(LOCALBIN) USE_SUDO=false $(LOCALBIN)/get_helm.sh --version $(HELM_VERSION)
+
+.PHONY: shellcheck
+shellcheck: $(LOCALBIN)
+	@command -v $(SHELLCHECK) >/dev/null 2>&1 && exit 0; \
+		curl -fsSL "https://github.com/koalaman/shellcheck/releases/download/$(SHELLCHECK_VERSION)/shellcheck-$(SHELLCHECK_VERSION).$$(uname -s | tr '[:upper:]' '[:lower:]').$$(uname -m | sed 's/arm64/aarch64/').tar.gz" \
+		| tar -xzf - -C "$(LOCALBIN)" --strip-components=1 "shellcheck-$(SHELLCHECK_VERSION)/shellcheck"
 
 #ENVTEST_K8S_VERSION is the version of Kubernetes to use for setting up ENVTEST binaries (i.e. 1.31)
 ENVTEST_K8S_VERSION ?= $(shell v='$(call gomodver,k8s.io/api)'; \
@@ -358,17 +371,28 @@ ci-verify: precommit ## Verify fmt, linters, mod/sum files, etc. and fail if any
 release-check: tools
 	$(GORELEASER) check
 
-.PHONY: release-snapshot
-release-snapshot: tools ## Build the release artifacts locally without publishing (images go to a local registry).
+.PHONY: release-dry-run
+release-dry-run: tools ## Build the release artifacts locally without publishing (images go to a local registry).
 	# The snapshot version exercises the script's <version> argument the same
 	# way a real release does.
-	hack/gen-capi-metadata.sh --contract $(CAPI_CONTRACT) -o $(ARTIFACTS)/metadata.yaml "$$(git describe --tags --abbrev=0)-SNAPSHOT"
+	hack/gen-capi-metadata.sh --contract $(CAPI_CONTRACT) -o $(ARTIFACTS)/metadata.yaml "$$(git describe --tags --abbrev=0 --exclude '*-*')-SNAPSHOT"
 	$(GORELEASER) release --snapshot --clean
 
+.PHONY: snapshot-tag
+snapshot-tag: ## Tag HEAD as a snapshot prerelease and print the push command (see hack/snapshot-tag.sh). PR= and REMOTE= override detection.
+	@hack/snapshot-tag.sh $(if $(PR),--pr $(PR)) $(if $(REMOTE),--remote $(REMOTE))
+
+# GORELEASER_CURRENT_TAG disambiguates a commit carrying both a snapshot and a
+# stable tag. The previous tag skips snapshots so changelogs diff against the
+# last stable release.
 .PHONY: release
 release: tools ## Build and push the multi-arch (linux/amd64,linux/arm64) images to ghcr, push the helm charts, and cut a GitHub release.
-	hack/gen-capi-metadata.sh --contract $(CAPI_CONTRACT) -o $(ARTIFACTS)/metadata.yaml "$$(git describe --tags --exact-match)"
-	$(GORELEASER) release --clean
+	set -e; \
+	tag="$${GORELEASER_CURRENT_TAG:-}"; \
+	[[ -n "$$tag" ]] || tag="$$(git describe --tags --exact-match)"; \
+	prev="$$(git describe --tags --abbrev=0 --match 'v[0-9]*.[0-9]*.[0-9]*' --exclude '*-*' "$$tag^" 2>/dev/null || true)"; \
+	hack/gen-capi-metadata.sh --contract $(CAPI_CONTRACT) -o $(ARTIFACTS)/metadata.yaml "$$tag"; \
+	GORELEASER_CURRENT_TAG="$$tag" GORELEASER_PREVIOUS_TAG="$$prev" $(GORELEASER) release --clean
 	for chart in $(ARTIFACTS)/helm/*.tgz; do \
 		$(HELM) push "$$chart" "oci://$(HELM_OCI_REPO)"; \
 	done

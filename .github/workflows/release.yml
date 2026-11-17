@@ -1,6 +1,7 @@
 name: Release
 
 # Releases are cut from GitHub Actions only, triggered by pushing a vX.Y.Z tag.
+# Tags with a suffix (`make snapshot-tag`) publish as prereleases.
 on:
   push:
     tags:
@@ -52,3 +53,4 @@ jobs:
         run: make release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GORELEASER_CURRENT_TAG: ${{ github.ref_name }}
