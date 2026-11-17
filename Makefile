@@ -16,6 +16,7 @@ TOOLS_MOD := $(MAKEFILE_PATH)/tools/go.mod
 GO_TOOL := go tool -modfile=$(TOOLS_MOD)
 NAMESPACE ?= capox-system
 HELM_VERSION ?= v4.3.1
+SHELLCHECK_VERSION ?= v0.11.0
 # CAPI contract version implemented by the provider; stamped on every release
 # series entry when hack/gen-capi-metadata.sh generates metadata.yaml. Bump it
 # (and add a series boundary in the script) when migrating to a new contract.
@@ -38,6 +39,7 @@ CONTAINER_TOOL ?= docker
 # Options are set to exit when a recipe line exits non-zero or a piped command fails.
 SHELL = /usr/bin/env bash -o pipefail
 .SHELLFLAGS = -ec
+SHELL_SOURCES = $(shell git ls-files --cached --others --exclude-standard '*.sh')
 
 .PHONY: all
 all: precommit
@@ -71,10 +73,14 @@ generate: ## Generate code and CRDs w/ controllergen
 	$(HELM_DOCS) --chart-search-root charts/cluster-api-provider-oxide
 
 .PHONY: verify
-verify: release-check ## Run linters and vetting on codebase with no commit checks and no mutations.
+verify: release-check lint-shell ## Run linters and vetting on codebase with no commit checks and no mutations.
 	"$(GOLANGCI_LINT)" config verify
 	$(GOLANGCI_LINT) run
 	go vet ./...
+
+.PHONY: lint-shell
+lint-shell: shellcheck ## Run shellcheck over the checked-in shell scripts.
+	$(SHELLCHECK) --severity=style $(SHELL_SOURCES)
 
 .PHONY: fix
 fix: golangci-lint ## Perform lint, fmt, and mod/sum file fixes
@@ -185,13 +191,14 @@ KIND ?= $(GO_TOOL) kind
 KO ?= KO_CACHE=$(KO_CACHE) $(GO_TOOL) ko
 KUSTOMIZE ?= $(GO_TOOL) kustomize
 GORELEASER ?= $(GO_TOOL) goreleaser
+SHELLCHECK ?= $(LOCALBIN)/shellcheck
 ENVTEST ?= go tool setup-envtest # this tool is in the main go.mod so the version stays in-sync
 GOLANGCI_LINT ?= $(LOCALBIN)/golangci-lint-custom
 HELM ?= $(LOCALBIN)/helm
 HELM_DOCS ?= $(GO_TOOL) helm-docs
 
 .PHONY: tools
-tools: kubectl helm $(LOCALBIN) setup-envtest golangci-lint ## Install all required dev tools to the repo's local bin/
+tools: kubectl helm shellcheck $(LOCALBIN) setup-envtest golangci-lint ## Install all required dev tools to the repo's local bin/
 	GOBIN="$(LOCALBIN)" go install -modfile=$(TOOLS_MOD) tool
 
 .PHONY: kubectl
@@ -206,6 +213,12 @@ helm: $(LOCALBIN)
 	curl -fsSL -o $(LOCALBIN)/get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-4
 	chmod 700 $(LOCALBIN)/get_helm.sh
 	HELM_INSTALL_DIR=$(LOCALBIN) USE_SUDO=false $(LOCALBIN)/get_helm.sh --version $(HELM_VERSION)
+
+.PHONY: shellcheck
+shellcheck: $(LOCALBIN)
+	@command -v $(SHELLCHECK) >/dev/null 2>&1 && exit 0; \
+		curl -fsSL "https://github.com/koalaman/shellcheck/releases/download/$(SHELLCHECK_VERSION)/shellcheck-$(SHELLCHECK_VERSION).$$(uname -s | tr '[:upper:]' '[:lower:]').$$(uname -m | sed 's/arm64/aarch64/').tar.gz" \
+		| tar -xzf - -C "$(LOCALBIN)" --strip-components=1 "shellcheck-$(SHELLCHECK_VERSION)/shellcheck"
 
 #ENVTEST_K8S_VERSION is the version of Kubernetes to use for setting up ENVTEST binaries (i.e. 1.31)
 ENVTEST_K8S_VERSION ?= $(shell v='$(call gomodver,k8s.io/api)'; \

@@ -21,8 +21,7 @@ Usage:
 
 Flags:
   -p, --pr         pull request number (default: detected with gh)
-  -r, --remote     remote to fetch tags from and push to (default: the remote
-                   whose GitHub repo is not a fork)
+  -r, --remote     remote to fetch tags from and push to (default: non-fork remote)
   -h, --help       show this help
 EOF
 }
