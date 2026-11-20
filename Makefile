@@ -15,7 +15,6 @@ MAKEFILE_PATH := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 TOOLS_MOD := $(MAKEFILE_PATH)/tools/go.mod
 GO_TOOL := go tool -modfile=$(TOOLS_MOD)
 NAMESPACE ?= capox-system
-HELM_VERSION ?= v4.3.1
 SHELLCHECK_VERSION ?= v0.11.0
 # CAPI contract version implemented by the provider; stamped on every release
 # series entry when hack/gen-capi-metadata.sh generates metadata.yaml. Bump it
@@ -194,11 +193,11 @@ GORELEASER ?= $(GO_TOOL) goreleaser
 SHELLCHECK ?= $(LOCALBIN)/shellcheck
 ENVTEST ?= go tool setup-envtest # this tool is in the main go.mod so the version stays in-sync
 GOLANGCI_LINT ?= $(LOCALBIN)/golangci-lint-custom
-HELM ?= $(LOCALBIN)/helm
+HELM ?= $(GO_TOOL) helm
 HELM_DOCS ?= $(GO_TOOL) helm-docs
 
 .PHONY: tools
-tools: kubectl helm shellcheck $(LOCALBIN) setup-envtest golangci-lint ## Install all required dev tools to the repo's local bin/
+tools: kubectl shellcheck $(LOCALBIN) setup-envtest golangci-lint ## Install all required dev tools to the repo's local bin/
 	GOBIN="$(LOCALBIN)" go install -modfile=$(TOOLS_MOD) tool
 
 .PHONY: kubectl
@@ -210,18 +209,6 @@ kubectl: $(LOCALBIN)
 		echo "$$(curl -fsSL "$$u.sha256")  $(LOCALBIN)/kubectl.tmp" | shasum -a 256 -c -; \
 		chmod +x "$(LOCALBIN)/kubectl.tmp"; \
 		mv "$(LOCALBIN)/kubectl.tmp" "$(LOCALBIN)/kubectl"
-
-.PHONY: helm
-helm: $(LOCALBIN)
-	@set -e; \
-		[ "$$($(HELM) version --template '{{.Version}}' 2>/dev/null)" = "$(HELM_VERSION)" ] && exit 0; \
-		p="$$(go env GOOS)-$$(go env GOARCH)"; \
-		f="helm-$(HELM_VERSION)-$$p.tar.gz"; \
-		cd "$(LOCALBIN)"; \
-		curl -fsSL -o "$$f" "https://get.helm.sh/$$f"; \
-		curl -fsSL "https://get.helm.sh/$$f.sha256sum" | shasum -a 256 -c -; \
-		tar -xzf "$$f" --strip-components=1 "$$p/helm"; \
-		rm "$$f"
 
 .PHONY: shellcheck
 shellcheck: $(LOCALBIN)
