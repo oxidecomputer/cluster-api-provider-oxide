@@ -203,16 +203,25 @@ tools: kubectl helm shellcheck $(LOCALBIN) setup-envtest golangci-lint ## Instal
 
 .PHONY: kubectl
 kubectl: $(LOCALBIN)
-	@command -v $(KUBECTL) >/dev/null 2>&1 && exit 0; \
+	@set -e; command -v $(KUBECTL) >/dev/null 2>&1 && exit 0; \
 		v=$$(curl -fsSL "https://dl.k8s.io/release/stable-$(ENVTEST_K8S_VERSION).txt"); \
-		curl -fsSL -o "$(LOCALBIN)/kubectl" "https://dl.k8s.io/release/$$v/bin/$$(go env GOOS)/$$(go env GOARCH)/kubectl"; \
-		chmod +x "$(LOCALBIN)/kubectl"
+		u="https://dl.k8s.io/release/$$v/bin/$$(go env GOOS)/$$(go env GOARCH)/kubectl"; \
+		curl -fsSL -o "$(LOCALBIN)/kubectl.tmp" "$$u"; \
+		echo "$$(curl -fsSL "$$u.sha256")  $(LOCALBIN)/kubectl.tmp" | shasum -a 256 -c -; \
+		chmod +x "$(LOCALBIN)/kubectl.tmp"; \
+		mv "$(LOCALBIN)/kubectl.tmp" "$(LOCALBIN)/kubectl"
 
 .PHONY: helm
 helm: $(LOCALBIN)
-	curl -fsSL -o $(LOCALBIN)/get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-4
-	chmod 700 $(LOCALBIN)/get_helm.sh
-	HELM_INSTALL_DIR=$(LOCALBIN) USE_SUDO=false $(LOCALBIN)/get_helm.sh --version $(HELM_VERSION)
+	@set -e; \
+		[ "$$($(HELM) version --template '{{.Version}}' 2>/dev/null)" = "$(HELM_VERSION)" ] && exit 0; \
+		p="$$(go env GOOS)-$$(go env GOARCH)"; \
+		f="helm-$(HELM_VERSION)-$$p.tar.gz"; \
+		cd "$(LOCALBIN)"; \
+		curl -fsSL -o "$$f" "https://get.helm.sh/$$f"; \
+		curl -fsSL "https://get.helm.sh/$$f.sha256sum" | shasum -a 256 -c -; \
+		tar -xzf "$$f" --strip-components=1 "$$p/helm"; \
+		rm "$$f"
 
 .PHONY: shellcheck
 shellcheck: $(LOCALBIN)
